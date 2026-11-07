@@ -1,0 +1,61 @@
+{
+  "name": "@local/local-markdown-notes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browse and edit local Markdown notes folders with Git history.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib/*.js",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    },
+    "market": {
+      "title": {
+        "en": "Local Markdown Notes",
+        "zh": "本地 Markdown 笔记"
+      },
+      "keywords": [
+        "markdown",
+        "notes",
+        "git",
+        "blame",
+        "local"
+      ],
+      "description": {
+        "en": "Browse, edit and review Markdown folders on this machine, with read-only Git status, diff and line blame.",
+        "zh": "浏览和编辑本机 Markdown 文件夹，并提供只读的 Git 状态、差异与逐行 blame。"
+      }
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-typert-protocol": "*"
+  }
+}

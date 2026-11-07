@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "本地 Markdown 笔记",
+    "description": "通过本地文件系统和 Git 管理 Markdown 文件夹。"
+  }
+}

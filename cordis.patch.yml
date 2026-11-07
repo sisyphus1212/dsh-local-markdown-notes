@@ -1,0 +1,18 @@
+# 只挂本插件自己的 row。
+#
+# 事故记录（2026-11-06）：这里曾经把 dsh-storage / dsh-storage-json /
+# dsh-storage-domain / dsh-subprocess-local 等基础服务也 insert 了一份，
+# 而这些 row 已经由 @deepseek-ai/dsh-base 提供。第二个 dsh-storage-domain
+# 去 mount 'domain' 时抛 StorageError: storage form 'domain' is already
+# mounted（code duplicate-mount），host 直接 exit 1，整个 App 起不来。
+#
+# 需要持久化时不要自己挂存储栈，用既有服务：
+#   const { domain } = await ctx.storageDomain.open(defineDomain(...))
+# 参考 dsh-mcp-connector 的 lib/stores.js。
+#
+# 本 row 同时承担两个半边：name 指向包主入口（Host 的 Cordis 插件），
+# package.json 的 dsh.client 声明让 Web 端再加载 ./client 这个浏览器半边。
+- insert:
+    - id: local-markdown-notes
+      name: '@local/local-markdown-notes'
+      config: {}

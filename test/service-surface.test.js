@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { ENDPOINTS, NAMESPACE, PACKAGE, remoteMarkers } from '../lib/contract.js'
+import { ENDPOINTS, NAMESPACE, PACKAGE, SERVICE, buildContribution, remoteMarkers } from '../lib/contract.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (name) => readFileSync(join(here, '..', name), 'utf8')
@@ -104,6 +104,34 @@ test('the remote marker is installed on the prototype with the protocol key', ()
 test('the service registers under the notesRemote key with the notes namespace', () => {
   assert.match(serviceSource, /super\(ctx, 'notesRemote', \{ namespace: NAMESPACE \}\)/)
   assert.match(serviceSource, /class NotesRemote extends TypertRemoteService/)
+})
+
+test('SERVICE is the Host Service key, not the wire namespace', () => {
+  assert.equal(SERVICE, 'notesRemote')
+  assert.notEqual(SERVICE, NAMESPACE, 'the namespace is the wire name; the service key is the registration key')
+  assert.ok(SERVICE.length > 0, 'api-gateway requires a nonempty invocation service segment')
+  assert.ok(!SERVICE.includes('#'), 'api-gateway rejects "#" in the invocation service segment')
+  // `validateBinding` compares descriptor.service against the registration, so a
+  // value that does not appear in `super(ctx, <key>, ...)` can never resolve.
+  assert.ok(
+    serviceSource.includes(`super(ctx, '${SERVICE}',`),
+    `lib/service.js must register the service under '${SERVICE}'`,
+  )
+})
+
+test('buildContribution stamps the service key on every descriptor', () => {
+  const contribution = buildContribution()
+  assert.equal(contribution.package, PACKAGE)
+  assert.equal(contribution.descriptors.length, SURFACE.length)
+
+  for (const descriptor of contribution.descriptors) {
+    assert.equal(descriptor.service, SERVICE, `${descriptor.method} is missing its service key`)
+    assert.equal(descriptor.service, 'notesRemote')
+    assert.equal(descriptor.namespace, NAMESPACE)
+    assert.equal(typeof descriptor.service, 'string')
+    assert.ok(descriptor.service.length > 0)
+    assert.ok(!descriptor.service.includes('#'))
+  }
 })
 
 test('the project registry opens the domain instead of mounting a provider row', () => {

@@ -730,6 +730,13 @@ function treeNamespace(options = {}) {
   return { namespace, calls }
 }
 
+/** The create buttons in the section header, in render order. */
+function headerActions(panel) {
+  const head = findOne(panel.runtime.tree(), 'lmn-side-head')
+  assert.ok(head, 'the section header renders')
+  return findAll(head, 'lmn-iconbtn')
+}
+
 /** Click one rendered element by reference and let the resulting work settle. */
 async function click(runtime, element) {
   assert.ok(element, 'the element to click exists')
@@ -1232,31 +1239,97 @@ async function press(runtime, element, key) {
   return prevented
 }
 
-test('the actions row exists only beside a project and names the target folder', async () => {
+test('the section header carries the create actions in every state', async () => {
   const { namespace } = treeNamespace({ entriesByPath: { '': [] } })
   const panel = await mountPanel({ namespace })
 
   assert.equal(
     findAll(panel.runtime.tree(), 'lmn-actions').length,
     0,
-    'no project is open yet, so there is nothing to create into',
+    'no second header row exists to appear and disappear',
+  )
+
+  const before = headerActions(panel).map((button) => button.props.title)
+  assert.deepEqual(
+    before,
+    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`],
+    'the header offers a new file and a new folder before a project is opened',
   )
 
   await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
 
-  const actions = findOne(panel.runtime.tree(), 'lmn-actions')
-  assert.ok(actions, 'opening the project reveals the actions row')
-  const label = findOne(actions, 'lmn-actions-label')
-  assert.equal(
-    textsOf(label),
-    `${NS}:panel.rootDir`,
-    'the row names the root directory while nothing deeper is selected',
-  )
-  const titles = findAll(actions, 'lmn-iconbtn').map((button) => button.props.title)
   assert.deepEqual(
-    titles,
-    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`],
-    'the row offers a new file and a new folder',
+    headerActions(panel).map((button) => button.props.title),
+    before,
+    'opening a project leaves the header exactly where it was, so nothing shifts',
+  )
+})
+
+test('clicking the open project row folds it instead of reopening it', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: 'a.md', name: 'a.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  const rootRow = () => findAll(panel.runtime.tree(), 'lmn-row').find((row) => row.props['aria-expanded'] !== undefined && String(row.props.className).includes('lmn-row-root'))
+
+  await click(panel.runtime, rootRow())
+  assert.equal(rootRow().props['aria-expanded'], 'true', 'the first click opens the project')
+  assert.ok(textsOf(findOne(panel.runtime.tree(), 'lmn-side')).includes('a.md'), 'its children are visible')
+
+  await click(panel.runtime, rootRow())
+  assert.equal(rootRow().props['aria-expanded'], 'false', 'the second click folds the same project')
+  assert.ok(!textsOf(findOne(panel.runtime.tree(), 'lmn-side')).includes('a.md'), 'its children are hidden again')
+})
+
+test('a folded folder is no longer where a new entry is created', async () => {
+  const calls = []
+  const { entriesByPath } = {
+    entriesByPath: {
+      '': [{ path: 'sub', name: 'sub', type: 'directory' }],
+      sub: [{ path: 'sub/deep.md', name: 'deep.md', type: 'file' }],
+    },
+  }
+  const built = treeNamespace({ entriesByPath })
+  built.namespace.createEntry = async (projectId, relativePath, kind) => {
+    calls.push(['createEntry', projectId, relativePath, kind])
+    return { ok: true, value: { path: relativePath, kind } }
+  }
+  const panel = await mountPanel({ namespace: built.namespace })
+
+  const rowNamed = (name) =>
+    findAll(panel.runtime.tree(), 'lmn-row').find((row) => textsOf(row).includes(name))
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(panel.runtime, rowNamed('sub'))
+  assert.equal(rowNamed('sub').props['aria-expanded'], 'true', 'the folder opened')
+
+  await click(panel.runtime, rowNamed('sub'))
+  assert.equal(rowNamed('sub').props['aria-expanded'], 'false', 'the folder folded again')
+
+  await click(panel.runtime, headerActions(panel)[0])
+  let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  input.props.onChange({ target: { value: 'fresh' } })
+  await panel.runtime.flush()
+  input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  await press(panel.runtime, input, 'Enter')
+
+  assert.ok(
+    calls.some((call) => call[2] === 'fresh.md'),
+    `the new file lands at the root, not in the folded folder: ${JSON.stringify(calls)}`,
+  )
+})
+
+test('the create buttons stay inert until a project is open', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [] } })
+  const panel = await mountPanel({ namespace })
+
+  const buttons = headerActions(panel)
+  assert.equal(buttons.length, 2, 'both create buttons render')
+
+  await click(panel.runtime, buttons[0])
+  assert.equal(
+    findOne(panel.runtime.tree(), 'lmn-create'),
+    undefined,
+    'with nothing imported there is nowhere to create, so no field opens',
   )
 })
 
@@ -1265,8 +1338,7 @@ test('the new-file action opens an inline name field prefilled with an untitled 
   const panel = await mountPanel({ namespace })
   await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
 
-  const actions = findOne(panel.runtime.tree(), 'lmn-actions')
-  await click(panel.runtime, findAll(actions, 'lmn-iconbtn')[0])
+  await click(panel.runtime, headerActions(panel)[0])
 
   const row = findOne(panel.runtime.tree(), 'lmn-create')
   assert.ok(row, 'the inline field appears under the actions row')
@@ -1289,7 +1361,7 @@ test('confirming a new file at the root calls createEntry with a .md path', asyn
   const panel = await mountPanel({ namespace })
   await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
 
-  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-iconbtn')[0])
+  await click(panel.runtime, headerActions(panel)[0])
   let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
   input.props.onChange({ target: { value: 'readme' } })
   await panel.runtime.flush()
@@ -1324,10 +1396,7 @@ test('creating inside a folder prefixes the selected folder and a directory keep
   )
   await click(panel.runtime, folderItem)
 
-  const label = findOne(panel.runtime.tree(), 'lmn-actions-label')
-  assert.equal(textsOf(label), 'sub', 'the actions row follows the opened folder')
-
-  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-iconbtn')[1])
+  await click(panel.runtime, headerActions(panel)[1])
   let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
   input.props.onChange({ target: { value: 'notes' } })
   await panel.runtime.flush()
@@ -1350,7 +1419,7 @@ test('Escape cancels the inline field without creating anything', async () => {
   const panel = await mountPanel({ namespace })
   await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
 
-  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-iconbtn')[0])
+  await click(panel.runtime, headerActions(panel)[0])
   assert.ok(findOne(panel.runtime.tree(), 'lmn-create'), 'the field is open before Escape')
 
   const input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
@@ -1369,7 +1438,7 @@ test('an empty name is cancelled instead of creating an unnamed entry', async ()
   const panel = await mountPanel({ namespace })
   await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
 
-  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-iconbtn')[0])
+  await click(panel.runtime, headerActions(panel)[0])
   let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
   input.props.onChange({ target: { value: '   ' } })
   await panel.runtime.flush()

@@ -53,7 +53,6 @@ window.__ModuleLoader__.load({
       'panel.blameSummary': '说明',
       'panel.newFile': '新建文件',
       'panel.newFolder': '新建文件夹',
-      'panel.rootDir': '根目录',
       'panel.namePlaceholder': '名称',
       'panel.previewEmpty': '这个文件还没有内容。',
       'panel.edit': '编辑',
@@ -106,7 +105,6 @@ window.__ModuleLoader__.load({
       'panel.blameSummary': 'Summary',
       'panel.newFile': 'New file',
       'panel.newFolder': 'New folder',
-      'panel.rootDir': 'Root',
       'panel.namePlaceholder': 'Name',
       'panel.previewEmpty': 'This file is still empty.',
       'panel.edit': 'Edit',
@@ -117,8 +115,8 @@ window.__ModuleLoader__.load({
     const STYLE = `
 .lmn-root{display:flex;height:100%;min-height:0;background:var(--dsw-alias-bg-base,Canvas);color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:18px}
 .lmn-side{width:260px;flex:0 0 260px;border-right:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));display:flex;flex-direction:column;min-height:0}
-.lmn-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
-.lmn-side-title{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-side-head{display:flex;align-items:center;gap:4px;padding:6px 6px 6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
+.lmn-side-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-btn{font:inherit;color:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-alias-bg-layer-2,transparent);padding:3px 8px}
 .lmn-btn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.04))}
 .lmn-btn[disabled]{opacity:.5;cursor:default}
@@ -138,7 +136,7 @@ window.__ModuleLoader__.load({
 .lmn-remove{flex:0 0 auto;opacity:0;transition:opacity .1s;padding:0 4px;line-height:16px;font:inherit;font-size:12px;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
 .lmn-row:hover .lmn-remove,.lmn-remove:focus-visible{opacity:1}
 .lmn-iconbtn{flex:0 0 auto;display:grid;place-items:center;width:22px;height:22px;padding:0;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
-.lmn-iconbtn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.06));color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-iconbtn:hover{background:rgba(127,127,127,.18);color:var(--dsw-alias-label-primary,CanvasText)}
 .lmn-iconbtn[disabled]{opacity:.4;cursor:default}
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
@@ -168,8 +166,6 @@ window.__ModuleLoader__.load({
 .lmn-blame-card{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;min-width:240px;max-width:360px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));box-shadow:0 6px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary,CanvasText);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;text-align:left;cursor:auto}
 .lmn-blame-chip:hover .lmn-blame-card,.lmn-blame-chip:focus-within .lmn-blame-card{display:block}
 .lmn-blame-card b{font-weight:600;color:var(--dsw-alias-label-secondary,#61666b);margin-right:4px}
-.lmn-actions{display:flex;align-items:center;gap:2px;padding:2px 6px 2px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.045));min-width:0}
-.lmn-actions-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
 .lmn-create{display:flex;align-items:center;gap:4px;padding:2px 6px;min-width:0}
 .lmn-create input{flex:1;min-width:0;font:inherit;font-size:12px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:6px;padding:2px 6px;outline:none}
 .lmn-create input:focus{border-color:var(--dsw-alias-brand-primary,#0f1115)}
@@ -693,6 +689,11 @@ window.__ModuleLoader__.load({
           const key = treeKey(target.id, relative)
           if (openDirs[key] === true) {
             setOpenDirs((current) => ({ ...current, [key]: false }))
+            // A folded folder must not stay the destination for new entries:
+            // the create box would write somewhere the user can no longer see.
+            setViewTarget((current) =>
+              current === relative || current.startsWith(relative + '/') ? parentOf(relative) : current,
+            )
             return
           }
           setOpenDirs((current) => ({ ...current, [key]: true }))
@@ -838,6 +839,7 @@ window.__ModuleLoader__.load({
       /** Open the inline name box under the directory that is currently in view. */
       const beginCreate = React.useCallback(
         (kind) => {
+          if (project === null) return
           setCreating({
             target: viewTarget,
             kind,
@@ -845,7 +847,7 @@ window.__ModuleLoader__.load({
           })
           setNotice(null)
         },
-        [t, viewTarget],
+        [project, t, viewTarget],
       )
 
       const cancelCreate = React.useCallback(() => {
@@ -1048,7 +1050,7 @@ window.__ModuleLoader__.load({
             className: 'lmn-iconbtn',
             title: label,
             'aria-label': label,
-            disabled: busy === 'create',
+            disabled: busy === 'create' || project === null,
             onClick,
           },
           h(
@@ -1164,6 +1166,21 @@ window.__ModuleLoader__.load({
         )
       }
 
+      /**
+       * Selecting a project opens it; clicking the project that is already open
+       * folds it again, the way a folder row behaves.
+       */
+      const activateProject = (item) => {
+        if (project !== null && project.id === item.id) {
+          const key = treeKey(item.id, '')
+          const open = openDirs[key] === true
+          setOpenDirs((current) => ({ ...current, [key]: !open }))
+          if (open) setViewTarget('')
+          return
+        }
+        void openProject(item)
+      }
+
       /** Top-level node: the imported folder itself, minus the redundant path line. */
       const projectNode = (item) => {
         const active = project !== null && project.id === item.id
@@ -1177,7 +1194,7 @@ window.__ModuleLoader__.load({
             role: 'treeitem',
             'aria-selected': active ? 'true' : 'false',
             'aria-expanded': open ? 'true' : 'false',
-            onClick: () => void openProject(item),
+            onClick: () => activateProject(item),
           },
           chevron(true, open),
           folderGlyph(open),
@@ -1204,17 +1221,6 @@ window.__ModuleLoader__.load({
         )
       }
 
-      const actions =
-        project === null
-          ? null
-          : h(
-              'div',
-              { className: 'lmn-actions' },
-              h('span', { className: 'lmn-actions-label', title: project.rootPath }, viewTarget === '' ? t('panel.rootDir') : viewTarget),
-              iconButton('newFile', t('panel.newFile'), () => beginCreate('file')),
-              iconButton('newFolder', t('panel.newFolder'), () => beginCreate('directory')),
-            )
-
       const side = h(
         'aside',
         { className: 'lmn-side' },
@@ -1222,6 +1228,8 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'lmn-side-head' },
           h('span', { className: 'lmn-side-title' }, t('panel.projects')),
+          iconButton('newFile', t('panel.newFile'), () => beginCreate('file')),
+          iconButton('newFolder', t('panel.newFolder'), () => beginCreate('directory')),
           h(
             'button',
             {
@@ -1232,7 +1240,6 @@ window.__ModuleLoader__.load({
             busy === 'import' ? t('panel.importing') : t('panel.import'),
           ),
         ),
-        actions,
         creating !== null && creating.target === '' ? createRow(0) : null,
         h(
           'div',

@@ -147,8 +147,12 @@ window.__ModuleLoader__.load({
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column}
-.lmn-editor textarea{flex:1;min-height:0;resize:none;border:0;outline:none;padding:12px 14px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2}
+.lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.lmn-doc{flex:1;min-height:0;width:100%;max-width:820px;margin:0 auto;padding:0 28px;box-sizing:border-box;display:flex;flex-direction:column}
+.lmn-editor textarea{flex:1;min-height:0;resize:none;border:0;outline:none;padding:14px 0 24px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2}
+/* The host paints a global focus ring on every focused control. Our editor
+   already shows the caret, so the ring only boxes the whole page in blue. */
+.lmn-root .lmn-editor textarea:focus,.lmn-root .lmn-editor textarea:focus-visible{outline:none}
 .lmn-bottom{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));max-height:44%;display:flex;flex-direction:column;min-height:0}
 .lmn-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-tab{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;border-radius:6px;padding:3px 8px;cursor:pointer}
@@ -164,7 +168,7 @@ window.__ModuleLoader__.load({
 .lmn-empty-center h3{margin:0 0 6px;font-size:14px;color:var(--dsw-alias-label-primary,CanvasText)}
 .lmn-kv{display:flex;gap:6px}
 .lmn-kv b{font-weight:600}
-.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 12px 0;min-width:0}
+.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:10px 0 0;min-width:0}
 .lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;min-width:0;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;outline:none;cursor:default}
 .lmn-blame-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-blame-chip:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
@@ -180,7 +184,7 @@ window.__ModuleLoader__.load({
 .lmn-seg button{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;padding:3px 10px;cursor:pointer}
 .lmn-seg button[aria-pressed="true"]{color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
 .lmn-seg button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
-.lmn-render{flex:1;min-height:0;overflow:auto;padding:12px 14px;color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:20px;word-break:break-word}
+.lmn-render{flex:1;min-height:0;overflow:auto;padding:14px 0 24px;color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:20px;word-break:break-word}
 .lmn-render>*:first-child{margin-top:0}
 .lmn-render h1,.lmn-render h2,.lmn-render h3,.lmn-render h4,.lmn-render h5,.lmn-render h6{margin:16px 0 8px;line-height:1.3;font-weight:600}
 .lmn-render h1{font-size:22px}
@@ -202,7 +206,7 @@ window.__ModuleLoader__.load({
 .lmn-render table{margin:10px 0;border-collapse:collapse;font-size:12px}
 .lmn-render th,.lmn-render td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;text-align:left;vertical-align:top}
 .lmn-render th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));font-weight:600}
-.lmn-render-empty{padding:10px 12px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
+.lmn-render-empty{padding:14px 0;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
 `
 
     /**
@@ -1352,22 +1356,26 @@ window.__ModuleLoader__.load({
           : h(
               'div',
               { className: 'lmn-editor' },
-              blameBar,
-              viewMode === 'preview'
-                ? draft === ''
-                  ? h('div', { className: 'lmn-render-empty' }, t('panel.previewEmpty'))
-                  : h('div', { className: 'lmn-render' }, renderMarkdown(draft))
-                : h('textarea', {
-                    value: draft,
-                    spellCheck: false,
-                    onChange: (event) => {
-                      setDraft(event.target.value)
-                      setNotice(null)
-                    },
-                    onKeyUp: (event) => void onSelectLine(event),
-                    onClick: (event) => void onSelectLine(event),
-                    'aria-label': file.path,
-                  }),
+              h(
+                'div',
+                { className: 'lmn-doc' },
+                blameBar,
+                viewMode === 'preview'
+                  ? draft === ''
+                    ? h('div', { className: 'lmn-render-empty' }, t('panel.previewEmpty'))
+                    : h('div', { className: 'lmn-render' }, renderMarkdown(draft))
+                  : h('textarea', {
+                      value: draft,
+                      spellCheck: false,
+                      onChange: (event) => {
+                        setDraft(event.target.value)
+                        setNotice(null)
+                      },
+                      onKeyUp: (event) => void onSelectLine(event),
+                      onClick: (event) => void onSelectLine(event),
+                      'aria-label': file.path,
+                    }),
+              ),
             )
 
       const statusPane =

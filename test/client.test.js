@@ -1454,6 +1454,36 @@ test('a folder row action creates a markdown file inside that folder by default'
   )
 })
 
+test('opening the field on a folder that was never listed loads its children', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: {
+      '': [{ path: 'sub', name: 'sub', type: 'directory' }],
+      sub: [{ path: 'sub/deep.md', name: 'deep.md', type: 'file' }],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  assert.ok(
+    !calls.some((call) => call[0] === 'listEntries' && call[2] === 'sub'),
+    'the folder stays unloaded until something reveals it',
+  )
+
+  await click(panel.runtime, rowActions(panel, 'sub')[0])
+
+  assert.ok(
+    calls.some((call) => call[0] === 'listEntries' && call[2] === 'sub'),
+    `revealing the folder fetches its children: ${JSON.stringify(calls)}`,
+  )
+  const texts = textsOf(findOne(panel.runtime.tree(), 'lmn-side'))
+  assert.ok(
+    !texts.includes(`${NS}:panel.loading`),
+    `the loading placeholder is replaced by the real entries: ${texts}`,
+  )
+  assert.ok(texts.includes('deep.md'), 'the fetched child renders under the folder')
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-create').length, 1, 'the field is still open')
+})
+
 test('creating inside a folder prefixes the selected folder and a directory keeps its name', async () => {
   const { namespace, calls } = treeNamespace({
     entriesByPath: {

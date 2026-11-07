@@ -53,7 +53,8 @@ window.__ModuleLoader__.load({
       'panel.blameSummary': '说明',
       'panel.newFile': '新建文件',
       'panel.newFolder': '新建文件夹',
-      'panel.namePlaceholder': '名称',
+      'panel.namePlaceholder': '文件夹名',
+      'panel.fileNamePlaceholder': '文件名.md',
       'panel.previewEmpty': '这个文件还没有内容。',
       'panel.edit': '编辑',
       'panel.preview': '预览',
@@ -105,7 +106,8 @@ window.__ModuleLoader__.load({
       'panel.blameSummary': 'Summary',
       'panel.newFile': 'New file',
       'panel.newFolder': 'New folder',
-      'panel.namePlaceholder': 'Name',
+      'panel.namePlaceholder': 'Folder name',
+      'panel.fileNamePlaceholder': 'name.md',
       'panel.previewEmpty': 'This file is still empty.',
       'panel.edit': 'Edit',
       'panel.preview': 'Preview',
@@ -856,8 +858,13 @@ window.__ModuleLoader__.load({
           setViewTarget(directory)
           setOpenDirs((current) => ({ ...current, [treeKey(project.id, directory)]: true }))
           setNotice(null)
+          // Revealing a directory that was never listed would leave it stuck on
+          // the loading placeholder, so pull its children in now.
+          if (children[treeKey(project.id, directory)] === undefined) {
+            void loadPath(project, directory)
+          }
         },
-        [project, t, viewTarget],
+        [children, loadPath, project, t, viewTarget],
       )
 
       const cancelCreate = React.useCallback(() => {

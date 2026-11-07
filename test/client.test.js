@@ -1860,3 +1860,111 @@ test('the uncommitted chip is anchored to the cursor line', async () => {
     'the chip itself still says only what the state is',
   )
 })
+
+// ---------------------------------------------------------------------------
+// Code highlighting: a known fence language colours the block, others stay plain
+// ---------------------------------------------------------------------------
+
+/** Mount a panel over the one-file fixture and preview `markdown`. */
+async function previewing(markdown) {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+  })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: markdown } })
+  await panel.runtime.flush()
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1])
+
+  const render = findOne(panel.runtime.tree(), 'lmn-render')
+  assert.ok(render, 'the preview body is showing')
+  return render
+}
+
+test('a fenced block names its language and colours its JavaScript tokens', async () => {
+  const source = ['// note', "const answer = 'yes' + 42", 'run(answer)'].join('\n')
+  const render = await previewing(['```js', source, '```', ''].join('\n'))
+
+  const pre = seekType(render, 'pre')
+  assert.ok(pre, 'the fence becomes a pre block')
+  assert.equal(pre.props['data-lang'], 'js', 'the fence language rides on the block')
+
+  const code = seekType(pre, 'code')
+  assert.ok(code, 'the body stays one code element')
+  assert.equal(countType(render, 'code'), 1, 'a single fence is still a single code element')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-comment').map(textsOf), ['// note'])
+  assert.deepEqual(findAll(code, 'lmn-tok-keyword').map(textsOf), ['const'])
+  assert.deepEqual(findAll(code, 'lmn-tok-string').map(textsOf), ["'yes'"])
+  assert.deepEqual(findAll(code, 'lmn-tok-number').map(textsOf), ['42'])
+  assert.deepEqual(findAll(code, 'lmn-tok-function').map(textsOf), ['run'])
+
+  assert.equal(textsOf(code), source, 'highlighting never rewrites the source')
+})
+
+test('an aliased fence language is resolved to its specification', async () => {
+  const render = await previewing(['```ts', 'let count: number = 0', '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.equal(seekType(render, 'pre').props['data-lang'], 'ts', 'the alias is kept as written')
+  assert.deepEqual(findAll(code, 'lmn-tok-keyword').map(textsOf), ['let'])
+  assert.deepEqual(findAll(code, 'lmn-tok-type').map(textsOf), ['number'])
+})
+
+test('a non-JavaScript fence uses its own grammar', async () => {
+  const source = ['# install', 'echo "done" 7'].join('\n')
+  const render = await previewing(['```bash', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-comment').map(textsOf), ['# install'])
+  assert.deepEqual(findAll(code, 'lmn-tok-builtin').map(textsOf), ['echo'])
+  assert.deepEqual(findAll(code, 'lmn-tok-string').map(textsOf), ['"done"'])
+  assert.deepEqual(findAll(code, 'lmn-tok-number').map(textsOf), ['7'])
+  assert.equal(textsOf(code), source)
+})
+
+test('a case-insensitive grammar still colours an upper-case query', async () => {
+  const render = await previewing(['```sql', 'SELECT name FROM users WHERE id = 3', '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-keyword').map(textsOf), ['SELECT', 'FROM', 'WHERE'])
+  assert.deepEqual(findAll(code, 'lmn-tok-number').map(textsOf), ['3'])
+})
+
+test('an unknown fence language keeps its text and gains no token spans', async () => {
+  const source = '++++[>++++<-]'
+  const render = await previewing(['```brainfuck', source, '```', ''].join('\n'))
+
+  const pre = seekType(render, 'pre')
+  assert.equal(pre.props['data-lang'], 'brainfuck', 'the block still reports what was written')
+  const code = seekType(pre, 'code')
+  assert.equal(textsOf(code), source, 'the body is shown as written')
+  assert.equal(findAll(code, 'lmn-tok-keyword').length, 0, 'nothing is guessed at')
+})
+
+test('a fence without a language carries no badge and no colouring', async () => {
+  const render = await previewing(['```', 'plain text', '```', ''].join('\n'))
+  const pre = seekType(render, 'pre')
+
+  assert.equal(pre.props['data-lang'], undefined, 'no language was written, so none is claimed')
+  assert.equal(textsOf(seekType(pre, 'code')), 'plain text')
+})
+
+test('highlighted source can never become executable markup', async () => {
+  const source = "const tag = '<img src=x onerror=alert(1)>'"
+  const render = await previewing(['```js', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.equal(seekType(code, 'img'), null, 'the markup inside the string stays text')
+  assert.ok(textsOf(code).includes('<img src=x onerror=alert(1)>'), 'it is shown verbatim')
+  assert.ok(
+    !JSON.stringify(render).includes('dangerouslySetInnerHTML'),
+    'the highlighted preview is still built from elements',
+  )
+})

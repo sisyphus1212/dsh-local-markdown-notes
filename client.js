@@ -209,6 +209,28 @@ window.__ModuleLoader__.load({
 .lmn-render pre{margin:10px 0;padding:10px 12px;border-radius:8px;overflow:auto;background:var(--dsw-alias-markdown-code-block,rgba(0,0,0,.04));border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word}
 .lmn-render pre code{background:none;border:0;padding:0;font-size:inherit}
 .lmn-render code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:1px 4px;border-radius:4px;background:var(--dsw-alias-markdown-inline-code,rgba(0,0,0,.06))}
+.lmn-render pre[data-lang]{position:relative;padding-top:26px}
+.lmn-render pre[data-lang]::before{content:attr(data-lang);position:absolute;top:6px;right:12px;font-size:10px;line-height:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,#81858c);pointer-events:none}
+.lmn-tok-comment{color:var(--dsw-static-neutral-bluish-600,#81858c);font-style:italic}
+.lmn-tok-keyword{color:var(--dsw-static-violet-600,#7c3aed)}
+.lmn-tok-type{color:var(--dsw-static-blue-800,#1e40af)}
+.lmn-tok-function,.lmn-tok-builtin{color:var(--dsw-static-blue-600,#2563eb)}
+.lmn-tok-string{color:var(--dsw-static-green-900,#233c2c)}
+.lmn-tok-number,.lmn-tok-constant{color:var(--dsw-static-amber-600,#dd8629)}
+body[data-ds-dark-theme] .lmn-tok-comment{color:var(--dsw-static-neutral-bluish-400,#adb2b8)}
+body[data-ds-dark-theme] .lmn-tok-keyword{color:var(--dsw-static-violet-400,#a78bfa)}
+body[data-ds-dark-theme] .lmn-tok-type{color:var(--dsw-static-blue-300,#93c5fd)}
+body[data-ds-dark-theme] .lmn-tok-function,body[data-ds-dark-theme] .lmn-tok-builtin{color:var(--dsw-static-blue-400,#60a5fa)}
+body[data-ds-dark-theme] .lmn-tok-string{color:var(--dsw-static-green-400,#4ed17e)}
+body[data-ds-dark-theme] .lmn-tok-number,body[data-ds-dark-theme] .lmn-tok-constant{color:var(--dsw-static-amber-400,#f7ad31)}
+@media (prefers-color-scheme:dark){
+body:not([data-ds-light-theme]) .lmn-tok-comment{color:var(--dsw-static-neutral-bluish-400,#adb2b8)}
+body:not([data-ds-light-theme]) .lmn-tok-keyword{color:var(--dsw-static-violet-400,#a78bfa)}
+body:not([data-ds-light-theme]) .lmn-tok-type{color:var(--dsw-static-blue-300,#93c5fd)}
+body:not([data-ds-light-theme]) .lmn-tok-function,body:not([data-ds-light-theme]) .lmn-tok-builtin{color:var(--dsw-static-blue-400,#60a5fa)}
+body:not([data-ds-light-theme]) .lmn-tok-string{color:var(--dsw-static-green-400,#4ed17e)}
+body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) .lmn-tok-constant{color:var(--dsw-static-amber-400,#f7ad31)}
+}
 .lmn-render table{margin:10px 0;border-collapse:collapse;font-size:12px}
 .lmn-render th,.lmn-render td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;text-align:left;vertical-align:top}
 .lmn-render th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));font-weight:600}
@@ -457,7 +479,7 @@ window.__ModuleLoader__.load({
     // The preview is built from React elements, never from HTML strings, so a
     // note's contents can never become markup the browser executes.
 
-    const MD_FENCE = /^\s*(```|~~~)/
+    const MD_FENCE = /^\s*(```|~~~)\s*([A-Za-z0-9_+#.-]*)/
     const MD_HEADING = /^(#{1,6})\s+(.*)$/
     const MD_RULE = /^\s*([-*_])(\s*\1){2,}\s*$/
     const MD_QUOTE = /^\s*>\s?(.*)$/
@@ -507,6 +529,290 @@ window.__ModuleLoader__.load({
         .map((cell) => cell.trim())
     }
 
+    // --- Code highlighting -------------------------------------------------
+    // A small scanner, not a parser: it recognises comments, quoted strings,
+    // numbers and bare words, and colours a bare word only when the language
+    // lists it. Everything else stays literal text, so an unsupported construct
+    // is shown as written instead of being dropped. Every language below is
+    // optional — a fence whose language is unknown keeps the plain rendering.
+
+    /** Turn a whitespace-separated word list into a lookup set. */
+    function words(text) {
+      return new Set(text.split(/\s+/).filter(Boolean))
+    }
+
+    const HL_JS = {
+      lineComment: ['//'],
+      blockComment: [['/*', '*/']],
+      quotes: ["'", '"', '`'],
+      escapes: true,
+      keywords: words('as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch throw try typeof var while with yield'),
+      constants: words('true false null undefined NaN Infinity this'),
+      builtins: words('console window document Object Array Promise JSON Math String Number Boolean Symbol Map Set WeakMap Date RegExp Error process require globalThis'),
+      types: words('any bigint boolean never number object string symbol unknown void'),
+    }
+
+    const HL_SPECS = {
+      javascript: HL_JS,
+      typescript: {
+        ...HL_JS,
+        types: words('any bigint boolean never number object string symbol unknown void interface type enum namespace declare readonly keyof infer satisfies'),
+      },
+      json: {
+        lineComment: [],
+        blockComment: [],
+        quotes: ['"'],
+        escapes: true,
+        keywords: words(''),
+        constants: words('true false null'),
+        builtins: words(''),
+        types: words(''),
+      },
+      bash: {
+        lineComment: ['#'],
+        blockComment: [],
+        quotes: ["'", '"'],
+        escapes: true,
+        keywords: words('if then else elif fi for while until do done case esac in function return local export readonly shift break continue exit set unset trap source alias'),
+        constants: words('true false'),
+        builtins: words('echo cd pwd ls cat grep sed awk find xargs read printf git npm pnpm node mkdir cp mv rm chmod curl tar ssh scp'),
+        types: words(''),
+      },
+      powershell: {
+        lineComment: ['#'],
+        blockComment: [['<#', '#>']],
+        quotes: ["'", '"'],
+        escapes: true,
+        keywords: words('begin break catch class continue data do dynamicparam else elseif end enum exit filter finally for foreach from function if in param process return switch throw trap try until using var while workflow'),
+        constants: words('$true $false $null'),
+        builtins: words('Write-Host Write-Output Get-ChildItem Get-Content Set-Content Remove-Item New-Item Copy-Item Move-Item Select-Object Where-Object ForEach-Object Test-Path Join-Path Split-Path'),
+        types: words(''),
+      },
+      python: {
+        lineComment: ['#'],
+        blockComment: [],
+        quotes: ["'", '"'],
+        escapes: true,
+        keywords: words('and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield'),
+        constants: words('None True False self cls'),
+        builtins: words('print len range enumerate zip isinstance issubclass open sorted sum min max abs round type repr input super object setattr getattr hasattr'),
+        types: words('bool bytes dict float int list set str tuple'),
+      },
+      go: {
+        lineComment: ['//'],
+        blockComment: [['/*', '*/']],
+        quotes: ['"', '`', "'"],
+        escapes: true,
+        keywords: words('break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var'),
+        constants: words('nil true false iota'),
+        builtins: words('append cap close copy delete len make new panic print println recover'),
+        types: words('any bool byte error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr complex64 complex128'),
+      },
+      rust: {
+        lineComment: ['//'],
+        blockComment: [['/*', '*/']],
+        quotes: ['"', "'"],
+        escapes: true,
+        keywords: words('as async await break const continue crate dyn else enum extern fn for if impl in let loop match mod move mut pub ref return self static struct super trait type unsafe use where while'),
+        constants: words('true false None Some Ok Err'),
+        builtins: words('assert assert_eq format panic print println vec write writeln'),
+        types: words('bool char f32 f64 i8 i16 i32 i64 i128 isize str u8 u16 u32 u64 u128 usize String Vec Option Result Box HashMap'),
+      },
+      sql: {
+        lineComment: ['--'],
+        blockComment: [['/*', '*/']],
+        quotes: ["'", '"'],
+        escapes: false,
+        fold: true,
+        keywords: words('add all alter and as asc by case create default delete desc distinct drop else end exists foreign from group having in index inner insert into is join key left like limit not null offset on or order outer primary references right select set table then union unique update values view when where'),
+        constants: words('true false null'),
+        builtins: words('count sum avg min max coalesce cast now'),
+        types: words('bigint boolean date decimal double float int integer json numeric real smallint text timestamp varchar'),
+      },
+      yaml: {
+        lineComment: ['#'],
+        blockComment: [],
+        quotes: ["'", '"'],
+        escapes: false,
+        keywords: words(''),
+        constants: words('true false null yes no on off'),
+        builtins: words(''),
+        types: words(''),
+      },
+      css: {
+        lineComment: [],
+        blockComment: [['/*', '*/']],
+        quotes: ["'", '"'],
+        escapes: true,
+        keywords: words(''),
+        constants: words(''),
+        builtins: words(''),
+        types: words(''),
+      },
+    }
+
+    const HL_ALIASES = {
+      js: 'javascript',
+      jsx: 'javascript',
+      mjs: 'javascript',
+      cjs: 'javascript',
+      node: 'javascript',
+      ts: 'typescript',
+      tsx: 'typescript',
+      sh: 'bash',
+      shell: 'bash',
+      zsh: 'bash',
+      console: 'bash',
+      ps1: 'powershell',
+      pwsh: 'powershell',
+      py: 'python',
+      python3: 'python',
+      golang: 'go',
+      rs: 'rust',
+      yml: 'yaml',
+      jsonc: 'json',
+      postgres: 'sql',
+      postgresql: 'sql',
+      mysql: 'sql',
+    }
+
+    // Both patterns are sticky by `lastIndex`, so they carry the global flag:
+    // without it `exec` rescans from 0 and only ever matches the first word.
+    const HL_NUMBER = /(?:0[xXbBoO][0-9a-fA-F_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)/g
+    const HL_WORD = /[A-Za-z_$][\w$]*/g
+
+    /**
+     * Walk one code block and classify what it finds.
+     *
+     * Returns a list of strings (literal text) and `{className, text}` records;
+     * concatenating every part reproduces the input exactly.
+     */
+    function tokenizeCode(code, spec) {
+      const parts = []
+      let plain = ''
+      let index = 0
+      const flushPlain = () => {
+        if (plain !== '') {
+          parts.push(plain)
+          plain = ''
+        }
+      }
+      const pushToken = (className, text) => {
+        flushPlain()
+        parts.push({ className, text })
+      }
+
+      while (index < code.length) {
+        const line = spec.lineComment.find((mark) => code.startsWith(mark, index))
+        if (line !== undefined) {
+          const stop = code.indexOf('\n', index)
+          const end = stop === -1 ? code.length : stop
+          pushToken('comment', code.slice(index, end))
+          index = end
+          continue
+        }
+
+        const block = spec.blockComment.find((pair) => code.startsWith(pair[0], index))
+        if (block !== undefined) {
+          const close = code.indexOf(block[1], index + block[0].length)
+          const end = close === -1 ? code.length : close + block[1].length
+          pushToken('comment', code.slice(index, end))
+          index = end
+          continue
+        }
+
+        const char = code[index]
+        if (spec.quotes.includes(char)) {
+          let cursor = index + 1
+          let closed = false
+          while (cursor < code.length) {
+            if (spec.escapes && code[cursor] === '\\') {
+              cursor += 2
+              continue
+            }
+            if (code[cursor] === char) {
+              cursor += 1
+              closed = true
+              break
+            }
+            if (code[cursor] === '\n' && char !== '`') break
+            cursor += 1
+          }
+          if (!closed) {
+            // An unterminated quote is punctuation, not the start of a string;
+            // emitting it as text keeps the rest of the block intact.
+            plain += char
+            index += 1
+            continue
+          }
+          pushToken('string', code.slice(index, cursor))
+          index = cursor
+          continue
+        }
+
+        HL_NUMBER.lastIndex = index
+        const digits = HL_NUMBER.exec(code)
+        if (digits !== null && digits.index === index) {
+          pushToken('number', digits[0])
+          index += digits[0].length
+          continue
+        }
+
+        HL_WORD.lastIndex = index
+        const word = HL_WORD.exec(code)
+        if (word !== null && word.index === index) {
+          const text = word[0]
+          const looked = spec.fold === true ? text.toLowerCase() : text
+          const after = code.slice(index + text.length).replace(/^[ \t]+/, '')
+          if (spec.keywords.has(looked)) {
+            pushToken('keyword', text)
+          } else if (spec.constants.has(looked)) {
+            pushToken('constant', text)
+          } else if (spec.builtins.has(looked)) {
+            pushToken('builtin', text)
+          } else if (spec.types.has(looked)) {
+            pushToken('type', text)
+          } else if (after.startsWith('(')) {
+            pushToken('function', text)
+          } else {
+            plain += text
+          }
+          index += text.length
+          continue
+        }
+
+        plain += char
+        index += 1
+      }
+
+      flushPlain()
+      return parts
+    }
+
+    /**
+     * Render one fenced block body, highlighted when the language is known.
+     *
+     * The result is a React child list, never markup, exactly like the rest of
+     * the preview.
+     */
+    function highlightCode(code, language) {
+      const key = String(language ?? '').trim().toLowerCase()
+      const name = HL_ALIASES[key] ?? key
+      const spec = HL_SPECS[name]
+      if (spec === undefined) return code
+      const parts = tokenizeCode(code, spec)
+      let counter = 0
+      let coloured = false
+      const children = parts.map((part) => {
+        if (typeof part === 'string') return part
+        coloured = true
+        const node = h('span', { key: `h${counter}`, className: `lmn-tok-${part.className}` }, part.text)
+        counter += 1
+        return node
+      })
+      return coloured ? children : code
+    }
+
     /**
      * Render a Markdown draft into React children.
      *
@@ -526,6 +832,7 @@ window.__ModuleLoader__.load({
         const fence = MD_FENCE.exec(line)
         if (fence !== null) {
           const marker = fence[1]
+          const language = String(fence[2] ?? '').trim().toLowerCase()
           const body = []
           index += 1
           while (index < lines.length && lines[index].trim() !== marker) {
@@ -533,7 +840,10 @@ window.__ModuleLoader__.load({
             index += 1
           }
           index += 1
-          blocks.push(h('pre', { key: nextKey() }, h('code', null, body.join('\n'))))
+          const code = body.join('\n')
+          const attrs = { key: nextKey() }
+          if (language !== '') attrs['data-lang'] = language
+          blocks.push(h('pre', attrs, h('code', null, highlightCode(code, language))))
           continue
         }
 

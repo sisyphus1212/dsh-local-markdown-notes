@@ -149,7 +149,16 @@ window.__ModuleLoader__.load({
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .lmn-doc{flex:1;min-height:0;width:100%;padding:0 20px;box-sizing:border-box;display:flex;flex-direction:column}
-.lmn-editor textarea{flex:1;min-height:0;resize:none;border:0;outline:none;padding:14px 0 24px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2}
+.lmn-code-body{position:relative;flex:1;min-width:0;min-height:0;display:flex}
+/* Edit-time colour is painted by a mirrored layer underneath the textarea, so
+   the textarea keeps the caret and the selection but draws no glyphs of its
+   own. Its scrollbar is hidden because a visible one would narrow its content
+   box and wrap long lines at a different column than the mirror. */
+.lmn-hl{position:absolute;top:0;right:0;bottom:0;left:0;margin:0;overflow:hidden;pointer-events:none;padding:14px 0 24px;color:var(--dsw-alias-label-primary,CanvasText);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2;white-space:pre-wrap;overflow-wrap:break-word;word-break:normal}
+.lmn-hl-line{min-height:20px;white-space:pre-wrap;overflow-wrap:break-word}
+.lmn-editor textarea{position:relative;z-index:1;flex:1;min-height:0;resize:none;border:0;outline:none;padding:14px 0 24px;background:transparent;color:transparent;caret-color:var(--dsw-alias-label-primary,CanvasText);-webkit-text-fill-color:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2;scrollbar-width:none;-ms-overflow-style:none}
+.lmn-editor textarea::-webkit-scrollbar{width:0;height:0}
+.lmn-editor textarea::selection{background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.18))}
 /* The host paints a global focus ring on every focused control. Our editor
    already shows the caret, so the ring only boxes the whole page in blue. */
 .lmn-root .lmn-editor textarea:focus,.lmn-root .lmn-editor textarea:focus-visible{outline:none}
@@ -213,8 +222,7 @@ window.__ModuleLoader__.load({
 .lmn-render code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:1px 4px;border-radius:4px;background:var(--dsw-alias-markdown-inline-code,rgba(0,0,0,.06))}
 .lmn-render pre[data-lang]{position:relative;padding-top:26px}
 .lmn-render pre[data-lang]::before{content:attr(data-lang);position:absolute;top:6px;right:12px;font-size:10px;line-height:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,#81858c);pointer-events:none}
-.lmn-tok-comment{color:var(--dsw-static-neutral-bluish-600,#81858c);font-style:italic}
-.lmn-tok-keyword{color:var(--dsw-static-violet-600,#7c3aed)}
+.lmn-tok-comment{color:var(--dsw-static-neutral-bluish-600,#81858c);font-style:italic}.lmn-tok-keyword{color:var(--dsw-static-violet-600,#7c3aed)}
 .lmn-tok-type{color:var(--dsw-static-blue-800,#1e40af)}
 .lmn-tok-function,.lmn-tok-builtin{color:var(--dsw-static-blue-600,#2563eb)}
 .lmn-tok-string{color:var(--dsw-static-green-900,#233c2c)}
@@ -233,6 +241,12 @@ body:not([data-ds-light-theme]) .lmn-tok-function,body:not([data-ds-light-theme]
 body:not([data-ds-light-theme]) .lmn-tok-string{color:var(--dsw-static-green-400,#4ed17e)}
 body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) .lmn-tok-constant{color:var(--dsw-static-amber-400,#f7ad31)}
 }
+/* Markdown structure painted in the editor mirror. These use alias tokens, so
+   they follow the theme without a second dark block. */
+.lmn-md-heading{color:var(--dsw-alias-label-primary,CanvasText);font-weight:600}
+.lmn-md-quote{color:var(--dsw-alias-label-secondary,#61666b);font-style:italic}
+.lmn-md-link{color:var(--dsw-alias-link,#1667d9)}
+.lmn-md-em{font-style:italic}
 .lmn-render table{margin:10px 0;border-collapse:collapse;font-size:12px}
 .lmn-render th,.lmn-render td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;text-align:left;vertical-align:top}
 .lmn-render th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));font-weight:600}
@@ -815,6 +829,137 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
       return coloured ? children : code
     }
 
+    // --- Edit-time highlighting ---------------------------------------------
+    // The editor paints colour with a mirrored layer under a transparent
+    // textarea, so every element here must reproduce its source line character
+    // for character: only span wrappers may be added, never text. A dropped or
+    // doubled character would slide the painted glyphs out from under the
+    // caret.
+
+    /** Highlight the inline spans of one Markdown line, keeping every marker. */
+    function colorizeInline(text, keyPrefix) {
+      const out = []
+      let last = 0
+      let counter = 0
+      MD_INLINE.lastIndex = 0
+      let match = MD_INLINE.exec(text)
+      while (match !== null) {
+        if (match.index > last) out.push(text.slice(last, match.index))
+        const token = match[0]
+        const className = token.startsWith('`')
+          ? 'lmn-tok-string'
+          : token.startsWith('**')
+            ? 'lmn-tok-function'
+            : token.startsWith('[')
+              ? 'lmn-md-link'
+              : 'lmn-md-em'
+        out.push(h('span', { key: `${keyPrefix}:${counter}`, className }, token))
+        counter += 1
+        last = match.index + token.length
+        match = MD_INLINE.exec(text)
+      }
+      if (last < text.length) out.push(text.slice(last))
+      return out
+    }
+
+    const MD_EDIT_HEADING = /^([ \t]*)(#{1,6})([ \t]+)(.*)$/
+    const MD_EDIT_BULLET = /^([ \t]*)([-*+]|\d+[.)])([ \t]+)(.*)$/
+    const MD_EDIT_QUOTE = /^([ \t]*)(>)([ \t]?)(.*)$/
+
+    /**
+     * Past this size the mirrored layer is not worth its render cost; the editor
+     * falls back to uncoloured lines and stays responsive.
+     */
+    const HL_EDIT_LIMIT = 200 * 1024
+
+    /**
+     * Paint a whole draft as one element per source line.
+     *
+     * Fences switch the scanner into the fenced language, so a fenced block is
+     * coloured exactly like the preview renders it.
+     */
+    function highlightMarkdown(source) {
+      const text = String(source ?? '')
+      const lines = text.split('\n')
+      if (text.length > HL_EDIT_LIMIT) {
+        return lines.map((line, index) =>
+          h('div', { key: index, className: 'lmn-hl-line' }, line),
+        )
+      }
+
+      const out = []
+      let fence = null
+
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index]
+        const key = index
+
+        if (fence !== null) {
+          if (line.trim() === fence.marker) {
+            fence = null
+            out.push(h('div', { key, className: 'lmn-hl-line' }, h('span', { className: 'lmn-tok-comment' }, line)))
+            continue
+          }
+          const painted = fence.language === '' ? line : highlightCode(line, fence.language)
+          out.push(h('div', { key, className: 'lmn-hl-line' }, painted))
+          continue
+        }
+
+        const opened = MD_FENCE.exec(line)
+        if (opened !== null) {
+          fence = { marker: opened[1], language: String(opened[2] ?? '').trim().toLowerCase() }
+          out.push(h('div', { key, className: 'lmn-hl-line' }, h('span', { className: 'lmn-tok-comment' }, line)))
+          continue
+        }
+
+        const heading = MD_EDIT_HEADING.exec(line)
+        if (heading !== null) {
+          out.push(
+            h(
+              'div',
+              { key, className: 'lmn-hl-line' },
+              h('span', { className: 'lmn-tok-comment' }, `${heading[1]}${heading[2]}`),
+              h('span', { className: 'lmn-md-heading' }, heading[3]),
+              colorizeInline(heading[4], `h${index}`),
+            ),
+          )
+          continue
+        }
+
+        const quote = MD_EDIT_QUOTE.exec(line)
+        if (quote !== null) {
+          out.push(
+            h(
+              'div',
+              { key, className: 'lmn-hl-line' },
+              h('span', { className: 'lmn-tok-comment' }, `${quote[1]}${quote[2]}${quote[3]}`),
+              h('span', { className: 'lmn-md-quote' }, quote[4]),
+            ),
+          )
+          continue
+        }
+
+        const bullet = MD_EDIT_BULLET.exec(line)
+        if (bullet !== null) {
+          out.push(
+            h(
+              'div',
+              { key, className: 'lmn-hl-line' },
+              bullet[1],
+              h('span', { className: 'lmn-tok-keyword' }, bullet[2]),
+              bullet[3],
+              colorizeInline(bullet[4], `b${index}`),
+            ),
+          )
+          continue
+        }
+
+        out.push(h('div', { key, className: 'lmn-hl-line' }, colorizeInline(line, `t${index}`)))
+      }
+
+      return out
+    }
+
     /**
      * Render a Markdown draft into React children.
      *
@@ -1252,16 +1397,23 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
 
       const blameTimer = React.useRef(null)
       const blameSeq = React.useRef(0)
-      // The gutter is a sibling of the textarea, so it can only follow the text
-      // by copying the scroll offset on every scroll event.
+      // Both the gutter and the colour layer are siblings of the textarea, so
+      // they can only follow the text by copying the scroll offset on every
+      // scroll event.
       const codeAreaRef = React.useRef(null)
       const gutterRef = React.useRef(null)
+      const hlRef = React.useRef(null)
 
       const syncGutterScroll = React.useCallback(() => {
         const area = codeAreaRef.current
+        if (area === null) return
         const gutter = gutterRef.current
-        if (area === null || gutter === null) return
-        gutter.scrollTop = area.scrollTop
+        if (gutter !== null) gutter.scrollTop = area.scrollTop
+        const layer = hlRef.current
+        if (layer !== null) {
+          layer.scrollTop = area.scrollTop
+          layer.scrollLeft = area.scrollLeft
+        }
       }, [])
 
       const onSelectLine = React.useCallback(
@@ -1743,19 +1895,28 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
                           h('div', { key: index, className: 'lmn-gutter-line' }, String(index + 1)),
                         ),
                       ),
-                      h('textarea', {
-                        value: draft,
-                        ref: codeAreaRef,
-                        spellCheck: false,
-                        onChange: (event) => {
-                          setDraft(event.target.value)
-                          setNotice(null)
-                        },
-                        onScroll: syncGutterScroll,
-                        onKeyUp: (event) => void onSelectLine(event),
-                        onClick: (event) => void onSelectLine(event),
-                        'aria-label': file.path,
-                      }),
+                      h(
+                        'div',
+                        { className: 'lmn-code-body' },
+                        h(
+                          'div',
+                          { className: 'lmn-hl', 'aria-hidden': 'true', ref: hlRef },
+                          highlightMarkdown(draft),
+                        ),
+                        h('textarea', {
+                          value: draft,
+                          ref: codeAreaRef,
+                          spellCheck: false,
+                          onChange: (event) => {
+                            setDraft(event.target.value)
+                            setNotice(null)
+                          },
+                          onScroll: syncGutterScroll,
+                          onKeyUp: (event) => void onSelectLine(event),
+                          onClick: (event) => void onSelectLine(event),
+                          'aria-label': file.path,
+                        }),
+                      ),
                     ),
               ),
             )

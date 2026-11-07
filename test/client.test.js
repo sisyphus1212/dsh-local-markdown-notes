@@ -1802,6 +1802,65 @@ test('scrolling the text carries the gutter with it', async () => {
   assert.ok(code, 'the two live in one row, so the text keeps the full height')
 })
 
+// ---------------------------------------------------------------------------
+// Edit-time colour: a mirrored layer paints the text the textarea shows
+// ---------------------------------------------------------------------------
+
+test('the colour layer reproduces the draft one line at a time', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { code, area } = await openWithGutter(panel)
+
+  const draft = '# Title\n\n- item **bold** and `code`\n> quoted\n'
+  area.props.onChange({ target: { value: draft } })
+  await panel.runtime.flush()
+
+  const hl = findOne(findOne(panel.runtime.tree(), 'lmn-code'), 'lmn-hl')
+  assert.ok(hl, 'the editing view paints a colour layer under the text')
+  assert.equal(hl.props['aria-hidden'], 'true', 'a screen reader reads the textarea, not the paint')
+  assert.deepEqual(
+    findAll(hl, 'lmn-hl-line').map((line) => textsOf(line)),
+    draft.split('\n'),
+    'every painted line must match its source line character for character',
+  )
+  assert.ok(code, 'the colour layer sits beside the gutter, not inside it')
+})
+
+test('the colour layer paints markdown structure and fenced code', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { area } = await openWithGutter(panel)
+
+  area.props.onChange({
+    target: { value: '# Title\n\n> quoted\n\none\n\ntwo\n\n```js\nconst x = 1\n```\n' },
+  })
+  await panel.runtime.flush()
+
+  const hl = findOne(panel.runtime.tree(), 'lmn-hl')
+  assert.ok(findOne(hl, 'lmn-md-heading'), 'a heading carries the heading colour')
+  assert.ok(findOne(hl, 'lmn-md-quote'), 'a quote carries the quote colour')
+  assert.ok(findOne(hl, 'lmn-tok-keyword'), 'the fenced javascript is tokenised')
+  assert.ok(findOne(hl, 'lmn-tok-number'), 'the fenced number is tokenised')
+
+  const line = findAll(hl, 'lmn-hl-line').find((item) => textsOf(item) === 'const x = 1')
+  assert.ok(line, 'the fenced body keeps its own painted line')
+})
+
+test('scrolling the text carries the colour layer with it', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { code, area } = await openWithGutter(panel)
+
+  const hl = findOne(code, 'lmn-hl')
+  const hlNode = { scrollTop: 0, scrollLeft: 0 }
+  area.props.ref.current = { scrollTop: 140, scrollLeft: 12 }
+  hl.props.ref.current = hlNode
+  area.props.onScroll()
+
+  assert.equal(hlNode.scrollTop, 140, 'the paint follows vertical scrolling')
+  assert.equal(hlNode.scrollLeft, 12, 'and horizontal scrolling too')
+})
+
 test('the preview shows no line numbers', async () => {
   const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
   const panel = await mountPanel({ namespace })

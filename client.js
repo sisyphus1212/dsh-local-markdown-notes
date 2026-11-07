@@ -138,6 +138,10 @@ window.__ModuleLoader__.load({
 .lmn-iconbtn{flex:0 0 auto;display:grid;place-items:center;width:22px;height:22px;padding:0;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
 .lmn-iconbtn:hover{background:rgba(127,127,127,.18);color:var(--dsw-alias-label-primary,CanvasText)}
 .lmn-iconbtn[disabled]{opacity:.4;cursor:default}
+.lmn-row-actions{flex:0 0 auto;display:flex;align-items:center;gap:1px;margin-left:2px}
+.lmn-row .lmn-iconbtn{width:20px;height:20px;opacity:0;transition:opacity .1s}
+.lmn-row:hover .lmn-iconbtn,.lmn-row .lmn-iconbtn:focus-visible{opacity:1}
+.lmn-row .lmn-iconbtn[disabled]{opacity:0}
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
@@ -836,15 +840,21 @@ window.__ModuleLoader__.load({
         [api, project, refreshProjects, report],
       )
 
-      /** Open the inline name box under the directory that is currently in view. */
+      /**
+       * Open the inline name box under one directory row: the directory whose
+       * inline action was clicked, expanded first so the box is visible.
+       */
       const beginCreate = React.useCallback(
-        (kind) => {
+        (kind, target) => {
           if (project === null) return
+          const directory = target ?? viewTarget
           setCreating({
-            target: viewTarget,
+            target: directory,
             kind,
             value: kind === 'file' ? `${t('panel.untitledName')}.md` : '',
           })
+          setViewTarget(directory)
+          setOpenDirs((current) => ({ ...current, [treeKey(project.id, directory)]: true }))
           setNotice(null)
         },
         [project, t, viewTarget],
@@ -1050,7 +1060,7 @@ window.__ModuleLoader__.load({
             className: 'lmn-iconbtn',
             title: label,
             'aria-label': label,
-            disabled: busy === 'create' || project === null,
+            disabled: busy === 'create',
             onClick,
           },
           h(
@@ -1070,19 +1080,37 @@ window.__ModuleLoader__.load({
           ),
         )
 
+      /** The two create actions, shown inline on a folder row the way the Explorer does. */
+      const rowActions = (relative) =>
+        h(
+          'span',
+          { className: 'lmn-row-actions' },
+          iconButton('newFile', t('panel.newFile'), (event) => {
+            event.stopPropagation()
+            beginCreate('file', relative)
+          }),
+          iconButton('newFolder', t('panel.newFolder'), (event) => {
+            event.stopPropagation()
+            beginCreate('directory', relative)
+          }),
+        )
+
       /** Children of one directory, rendered one indent step deeper. */
       const childNodes = (target, relative, depth) => {
         const key = treeKey(target.id, relative)
         const known = children[key]
         const pending =
-          relative !== '' &&
           creating !== null &&
           project !== null &&
           project.id === target.id &&
           creating.target === relative
             ? [createRow(depth)]
             : []
-        if (known === undefined) return [h('div', { key: `${key}:loading`, className: 'lmn-note' }, t('panel.loading'))]
+        if (known === undefined) {
+          return pending.length > 0
+            ? [...pending, h('div', { key: `${key}:loading`, className: 'lmn-note' }, t('panel.loading'))]
+            : [h('div', { key: `${key}:loading`, className: 'lmn-note' }, t('panel.loading'))]
+        }
         if (known.length === 0) {
           return pending.length > 0
             ? pending
@@ -1100,7 +1128,7 @@ window.__ModuleLoader__.load({
           h('input', {
             autoFocus: true,
             value: creating === null ? '' : creating.value,
-            placeholder: t('panel.namePlaceholder'),
+            placeholder: creating !== null && creating.kind === 'file' ? 'untitled.md' : t('panel.namePlaceholder'),
             'aria-label': creating === null ? t('panel.namePlaceholder') : creating.kind,
             onChange: (event) => {
               const value = event.target.value
@@ -1157,6 +1185,7 @@ window.__ModuleLoader__.load({
           chevron(isDirectory, open),
           isDirectory ? folderGlyph(open) : fileGlyph(entry.name),
           h('span', { className: 'lmn-name' }, entry.name),
+          isDirectory ? rowActions(relative) : null,
         )
         return h(
           'div',
@@ -1199,6 +1228,7 @@ window.__ModuleLoader__.load({
           chevron(true, open),
           folderGlyph(open),
           h('span', { className: 'lmn-name lmn-name-root' }, item.name.toUpperCase()),
+          active ? rowActions('') : null,
           h(
             'button',
             {
@@ -1228,8 +1258,6 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'lmn-side-head' },
           h('span', { className: 'lmn-side-title' }, t('panel.projects')),
-          iconButton('newFile', t('panel.newFile'), () => beginCreate('file')),
-          iconButton('newFolder', t('panel.newFolder'), () => beginCreate('directory')),
           h(
             'button',
             {
@@ -1240,7 +1268,6 @@ window.__ModuleLoader__.load({
             busy === 'import' ? t('panel.importing') : t('panel.import'),
           ),
         ),
-        creating !== null && creating.target === '' ? createRow(0) : null,
         h(
           'div',
           { className: 'lmn-list lmn-tree' },

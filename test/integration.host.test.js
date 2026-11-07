@@ -14,7 +14,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -192,6 +192,65 @@ describe('host integration: real filesystem', { skip: !hasGit && 'git is unavail
       assert.equal(updated.operation, 'update')
       assert.notEqual(updated.version, read.version)
       assert.equal(readFileSync(join(dir, 'doc.md'), 'utf8'), '# rewritten\n')
+    } finally {
+      await host.dispose()
+    }
+  })
+
+  test('createEntry makes a real file and a real directory on disk', async () => {
+    const host = await createHostContext()
+    const dir = tempProject('create-entry')
+    try {
+      const project = await host.remote.registerProject(dir)
+
+      const file = await host.remote.createEntry(project.id, 'fresh.md', 'file')
+      assert.deepEqual(file, { path: 'fresh.md', kind: 'file' })
+      assert.equal(readFileSync(join(dir, 'fresh.md'), 'utf8'), '')
+
+      const folder = await host.remote.createEntry(project.id, 'chapters', 'directory')
+      assert.deepEqual(folder, { path: 'chapters', kind: 'directory' })
+      assert.ok(statSync(join(dir, 'chapters')).isDirectory())
+
+      const nested = await host.remote.createEntry(project.id, 'chapters/one.md', 'file')
+      assert.deepEqual(nested, { path: 'chapters/one.md', kind: 'file' })
+      assert.equal(readFileSync(join(dir, 'chapters', 'one.md'), 'utf8'), '')
+    } finally {
+      await host.dispose()
+    }
+  })
+
+  test('createEntry refuses an existing entry, a missing folder and a bad kind', async () => {
+    const host = await createHostContext()
+    const dir = tempProject('create-entry-errors')
+    try {
+      writeFileSync(join(dir, 'taken.md'), '# taken\n')
+      const project = await host.remote.registerProject(dir)
+
+      await assert.rejects(
+        () => host.remote.createEntry(project.id, 'taken.md', 'file'),
+        (error) => {
+          assert.equal(error.code, 'notes/exists')
+          return true
+        },
+      )
+      assert.equal(readFileSync(join(dir, 'taken.md'), 'utf8'), '# taken\n')
+
+      await assert.rejects(
+        () => host.remote.createEntry(project.id, 'gone/deep.md', 'file'),
+        (error) => {
+          assert.equal(error.code, 'notes/not-found')
+          return true
+        },
+      )
+      assert.equal(existsSync(join(dir, 'gone')), false, 'no parent folder may be created')
+
+      await assert.rejects(
+        () => host.remote.createEntry(project.id, 'x.md', 'symlink'),
+        (error) => {
+          assert.equal(error.code, 'notes/bad-kind')
+          return true
+        },
+      )
     } finally {
       await host.dispose()
     }
@@ -459,6 +518,7 @@ describe('host integration: real git subprocess', { skip: !hasGit && 'git is una
         () => host.remote.gitBlame('ghost-00000000', 'doc.md', 1),
         () => host.remote.listEntries('ghost-00000000', ''),
         () => host.remote.readFile('ghost-00000000', 'doc.md'),
+        () => host.remote.createEntry('ghost-00000000', 'x.md', 'file'),
       ]
       for (const call of calls) {
         await assert.rejects(call, (error) => {

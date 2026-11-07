@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { normalizeRelativePath } from '../lib/pure.js'
-import { readFile, listEntries, resolveEntry, writeFile } from '../lib/workspace.js'
+import { createEntry, readFile, listEntries, resolveEntry, writeFile } from '../lib/workspace.js'
 
 /** A minimal in-memory filesystem: paths are plain POSIX-ish strings. */
 function fakeFs(initial, options = {}) {
@@ -17,6 +17,7 @@ function fakeFs(initial, options = {}) {
   const directories = new Set(options.directories ?? ['C:/notes'])
   const links = new Map(Object.entries(options.links ?? {}))
   const writes = []
+  const mkdirs = []
   const normalise = (value) => {
     const trimmed = String(value).replace(/\\/g, '/').replace(/\/+$/, '')
     return trimmed === '' ? '/' : trimmed
@@ -40,6 +41,12 @@ function fakeFs(initial, options = {}) {
       const outer = deref(parent.targetKey ?? parent)
       const inner = deref(child.targetKey ?? child)
       return inner === outer || inner.startsWith(`${outer}/`)
+    },
+    // Mirrors the Host contract: an opaque key plus a separate subprocess path.
+    // `options.processPath` lets a test prove the two are never confused.
+    processPath(target) {
+      const key = String(target.targetKey ?? target)
+      return options.processPath === undefined ? key : options.processPath(key)
     },
     async stat(target) {
       const key = deref(target.targetKey ?? target)
@@ -114,6 +121,25 @@ function fakeFs(initial, options = {}) {
         after: content,
       }
     },
+    async mkdir(target, mkdirOptions = {}) {
+      const key = deref(target.targetKey ?? target)
+      if (files.has(key) || directories.has(key)) {
+        if (mkdirOptions.recursive === true) return undefined
+        const error = new Error(`EEXIST: file already exists, mkdir '${key}'`)
+        error.code = 'EEXIST'
+        throw error
+      }
+      const parentKey = key.includes('/') ? key.slice(0, key.lastIndexOf('/')) : key
+      if (parentKey !== key && !directories.has(parentKey)) {
+        const error = new Error(`ENOENT: no such file or directory, mkdir '${key}'`)
+        error.code = 'ENOENT'
+        throw error
+      }
+      mkdirs.push(key)
+      directories.add(key)
+      return undefined
+    },
+    mkdirs,
   }
 }
 
@@ -213,4 +239,106 @@ test('writeFile refuses content above the size limit', async () => {
 test('writeFile refuses non-string content', async () => {
   const fs = fakeFs({})
   await assert.rejects(() => writeFile(fs, 'C:/notes', 'x.md', 42, null, undefined), /content must be a string/)
+})
+
+test('createEntry writes an empty file through the createIfAbsent primitive', async () => {
+  const fs = fakeFs({})
+  const created = await createEntry(fs, 'C:/notes', 'fresh.md', 'file', {})
+  assert.deepEqual(created, { path: 'fresh.md', kind: 'file' })
+  assert.equal(fs.writes.length, 1)
+  assert.deepEqual(fs.writes[0].expected, { kind: 'createIfAbsent' })
+  assert.equal(fs.writes[0].content, '')
+  assert.equal(await fs.readText({ targetKey: 'C:/notes/fresh.md' }), '')
+})
+
+test('createEntry creates a nested file when its parent folder already exists', async () => {
+  const fs = fakeFs({}, { directories: ['C:/notes', 'C:/notes/sub'] })
+  const created = await createEntry(fs, 'C:/notes', 'sub/deep.md', 'file', {})
+  assert.deepEqual(created, { path: 'sub/deep.md', kind: 'file' })
+  assert.equal(fs.writes[0].key, 'C:/notes/sub/deep.md')
+})
+
+test('createEntry makes a directory through the injected mkdir', async () => {
+  const fs = fakeFs({})
+  const calls = []
+  const created = await createEntry(fs, 'C:/notes', 'sub', 'directory', {
+    mkdir: async (path, mkdirOptions) => {
+      calls.push([path, mkdirOptions])
+      return fs.mkdir({ targetKey: path }, mkdirOptions)
+    },
+  })
+  assert.deepEqual(created, { path: 'sub', kind: 'directory' })
+  assert.deepEqual(calls, [['C:/notes/sub', { recursive: false }]])
+  const stat = await fs.stat({ targetKey: 'C:/notes/sub' })
+  assert.equal(stat.type, 'directory')
+  assert.equal(fs.writes.length, 0, 'directories must not go through writeText')
+})
+
+test('createEntry hands mkdir the subprocess path, never the opaque target key', async () => {
+  // The Host contract says the target key is opaque: a sandboxed or remote
+  // backend may use keys that are NOT openable paths. `processPath` is the only
+  // value a subprocess may receive, so this fake makes the two deliberately
+  // different and asserts the injected mkdir sees the subprocess path.
+  const fs = fakeFs({}, { processPath: (key) => `P:\\${key.replace(/[^A-Za-z0-9]/g, '_')}` })
+  const calls = []
+  await createEntry(fs, 'C:/notes', 'sub', 'directory', {
+    mkdir: async (path, mkdirOptions) => {
+      calls.push([path, mkdirOptions])
+    },
+  })
+  const resolved = await fs.resolve('C:/notes/sub')
+  assert.notEqual(resolved.targetKey, fs.processPath(resolved), 'the fake must keep the two apart')
+  assert.deepEqual(calls, [[fs.processPath(resolved), { recursive: false }]])
+  assert.notEqual(calls[0][0], resolved.targetKey)
+})
+
+test('createEntry refuses a path that already exists, file or directory', async () => {
+  const fs = fakeFs({ 'C:/notes/taken.md': '# taken' }, { directories: ['C:/notes', 'C:/notes/taken-dir'] })
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', 'taken.md', 'file', {}),
+    (error) => error.code === 'notes/exists',
+  )
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', 'taken-dir', 'directory', {}),
+    (error) => error.code === 'notes/exists',
+  )
+  assert.equal(fs.writes.length, 0)
+  assert.equal(fs.mkdirs.length, 0)
+})
+
+test('createEntry refuses a missing parent folder', async () => {
+  const fs = fakeFs({})
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', 'gone/deep.md', 'file', {}),
+    (error) => error.code === 'notes/not-found',
+  )
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', 'gone/deep', 'directory', {}),
+    (error) => error.code === 'notes/not-found',
+  )
+  assert.equal(fs.writes.length, 0)
+  assert.equal(fs.mkdirs.length, 0)
+})
+
+test('createEntry rejects a traversal and the project root itself', async () => {
+  const fs = fakeFs({})
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', '../secret.md', 'file', {}),
+    (error) => error.code === 'notes/bad-relative-path',
+  )
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', '', 'file', {}),
+    (error) => error.code === 'notes/bad-relative-path',
+  )
+  assert.equal(fs.writes.length, 0)
+})
+
+test('createEntry refuses an unknown kind before touching the filesystem', async () => {
+  const fs = fakeFs({})
+  await assert.rejects(
+    () => createEntry(fs, 'C:/notes', 'x.md', 'symlink', {}),
+    (error) => error.code === 'notes/bad-kind',
+  )
+  assert.equal(fs.writes.length, 0)
+  assert.equal(fs.mkdirs.length, 0)
 })

@@ -17,7 +17,20 @@
  * @module test/helpers/asar-deps
  */
 
-import { cpSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from 'node:fs'
+import {
+  closeSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { registerHooks } from 'node:module'
 import { pathToFileURL } from 'node:url'
@@ -168,6 +181,84 @@ function measureTree(root) {
 }
 
 /**
+ * Read the completion marker, if it was written by this exact package list.
+ *
+ * @param {string} depsRoot
+ * @returns {{files: number, bytes: number} | null}
+ */
+function readMarker(depsRoot) {
+  const marker = join(depsRoot, '.complete')
+  if (!existsSync(marker)) return null
+  try {
+    const stat = JSON.parse(readFileSync(marker, 'utf8'))
+    const samePackages =
+      Array.isArray(stat.packages) &&
+      stat.packages.length === PACKAGES.length &&
+      stat.packages.every((name, index) => name === PACKAGES[index])
+    if (!samePackages) return null
+    return { files: stat.files, bytes: stat.bytes }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Sleep without a busy loop, for lock retries.
+ * @param {number} ms
+ */
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/**
+ * Take a cross-process lock next to `depsRoot`.
+ *
+ * `node --test` runs test files in separate processes, and each of them calls
+ * {@link extractDeps}. Without a lock two processes copy the unpacked native
+ * packages into the same destination and the second one fails with
+ * `EPIPE, The process cannot access the file because it is being used by
+ * another process`.
+ *
+ * The lock is a `wx`-created file next to the deps root; the holder removes it
+ * on release. A stale lock from a crashed run is reclaimed after
+ * {@link LOCK_TIMEOUT_MS}.
+ *
+ * @param {string} depsRoot
+ * @returns {() => void} release function
+ */
+function acquireLock(depsRoot) {
+  const lockPath = `${depsRoot}.lock`
+  const deadline = Date.now() + LOCK_TIMEOUT_MS
+  for (;;) {
+    try {
+      mkdirSync(dirname(lockPath), { recursive: true })
+      closeSync(openSync(lockPath, 'wx'))
+      return () => {
+        try {
+          rmSync(lockPath, { force: true })
+        } catch {
+          // A concurrent release already removed it; nothing to do.
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error
+      if (Date.now() > deadline) {
+        // The holder died without releasing: reclaim rather than hang forever.
+        rmSync(lockPath, { force: true })
+        continue
+      }
+      sleep(LOCK_RETRY_MS)
+    }
+  }
+}
+
+/** How long a process waits for another one to finish extracting. */
+const LOCK_TIMEOUT_MS = 120000
+
+/** Delay between lock attempts. */
+const LOCK_RETRY_MS = 50
+
+/**
  * Extract the measured package closure out of an asar archive.
  *
  * Packages that Electron left unpacked (native addons such as `koffi`, which
@@ -178,61 +269,90 @@ function measureTree(root) {
  * Extraction is skipped when every package is already present under
  * `depsRoot` and the marker was written by the same package list, so repeated
  * runs reuse the first extraction while a newly added package still triggers
- * a refresh.
+ * a refresh. Concurrent callers are serialized by a lock, and the result is
+ * published with a single rename so no reader can ever observe a half-written
+ * tree.
  *
  * @param {string} asarPath archive to read
  * @param {string} depsRoot directory that becomes a `node_modules` parent
  * @returns {{files: number, bytes: number, missing: string[], cached: boolean}}
  */
 export function extractDeps(asarPath, depsRoot) {
-  const marker = join(depsRoot, '.complete')
-  if (existsSync(marker)) {
-    const stat = JSON.parse(readFileSync(marker, 'utf8'))
-    const samePackages =
-      Array.isArray(stat.packages) &&
-      stat.packages.length === PACKAGES.length &&
-      stat.packages.every((name, index) => name === PACKAGES[index])
-    if (samePackages) return { files: stat.files, bytes: stat.bytes, missing: [], cached: true }
-  }
+  const cached = readMarker(depsRoot)
+  if (cached !== null) return { ...cached, missing: [], cached: true }
 
-  const { buffer, dataOffset, files } = readDirectory(asarPath)
-  const prefixes = PACKAGES.map((name) => `dsh/node_modules/${name}/`)
-  const seen = new Set()
-  let written = 0
-  let bytes = 0
+  const release = acquireLock(depsRoot)
+  try {
+    // Another process may have finished while this one waited for the lock.
+    const settled = readMarker(depsRoot)
+    if (settled !== null) return { ...settled, missing: [], cached: true }
 
-  for (const [key, entry] of walk(files)) {
-    const prefix = prefixes.find((candidate) => key.startsWith(candidate))
-    if (prefix === undefined) continue
-    if (entry.unpacked === true) continue
-    if (typeof entry.offset !== 'string') continue
-    const start = dataOffset + Number(entry.offset)
-    const target = join(depsRoot, 'node_modules', key.slice('dsh/node_modules/'.length))
-    mkdirSync(dirname(target), { recursive: true })
-    writeFileSync(target, buffer.subarray(start, start + entry.size))
-    seen.add(prefix)
-    written += 1
-    bytes += entry.size
-  }
+    // Build in a staging directory owned by this process, then publish it with
+    // one rename: a plain in-place copy would leave the shared root readable
+    // in a half-populated state if this process were killed midway.
+    const staging = `${depsRoot}.s${process.pid}-${Date.now()}`
+    rmSync(staging, { recursive: true, force: true })
 
-  const unpackedRoot = unpackedRootFor(asarPath)
-  for (const name of PACKAGES) {
-    const source = join(unpackedRoot, 'dsh', 'node_modules', name)
-    if (!existsSync(source)) continue
-    const target = join(depsRoot, 'node_modules', name)
-    mkdirSync(dirname(target), { recursive: true })
-    cpSync(source, target, { recursive: true, force: true })
-    const measured = measureTree(target)
-    seen.add(`dsh/node_modules/${name}/`)
-    written += measured.files
-    bytes += measured.bytes
-  }
+    const { buffer, dataOffset, files } = readDirectory(asarPath)
+    const prefixes = PACKAGES.map((name) => `dsh/node_modules/${name}/`)
+    const seen = new Set()
+    let written = 0
+    let bytes = 0
 
-  const missing = PACKAGES.filter((name) => !seen.has(`dsh/node_modules/${name}/`))
-  if (missing.length === 0) {
-    writeFileSync(marker, JSON.stringify({ files: written, bytes, packages: PACKAGES }))
+    try {
+      for (const [key, entry] of walk(files)) {
+        const prefix = prefixes.find((candidate) => key.startsWith(candidate))
+        if (prefix === undefined) continue
+        if (entry.unpacked === true) continue
+        if (typeof entry.offset !== 'string') continue
+        const start = dataOffset + Number(entry.offset)
+        const target = join(staging, 'node_modules', key.slice('dsh/node_modules/'.length))
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, buffer.subarray(start, start + entry.size))
+        seen.add(prefix)
+        written += 1
+        bytes += entry.size
+      }
+
+      const unpackedRoot = unpackedRootFor(asarPath)
+      for (const name of PACKAGES) {
+        const source = join(unpackedRoot, 'dsh', 'node_modules', name)
+        if (!existsSync(source)) continue
+        const target = join(staging, 'node_modules', name)
+        mkdirSync(dirname(target), { recursive: true })
+        cpSync(source, target, { recursive: true, force: true })
+        const measured = measureTree(target)
+        seen.add(`dsh/node_modules/${name}/`)
+        written += measured.files
+        bytes += measured.bytes
+      }
+
+      const missing = PACKAGES.filter((name) => !seen.has(`dsh/node_modules/${name}/`))
+      if (missing.length === 0) {
+        writeFileSync(
+          join(staging, '.complete'),
+          JSON.stringify({ files: written, bytes, packages: PACKAGES }),
+        )
+      }
+
+      // Publish. If an earlier process won the race the staging tree is simply
+      // discarded and the winner's tree is reused; a markerless leftover from an
+      // older in-place run is replaced, because nothing may read a tree that was
+      // never published.
+      if (readMarker(depsRoot) !== null) {
+        rmSync(staging, { recursive: true, force: true })
+      } else {
+        rmSync(depsRoot, { recursive: true, force: true })
+        renameSync(staging, depsRoot)
+      }
+      return { files: written, bytes, missing, cached: false }
+    } finally {
+      // A failed or superseded run must not leave a per-process tree behind.
+      rmSync(staging, { recursive: true, force: true })
+    }
+  } finally {
+    release()
   }
-  return { files: written, bytes, missing, cached: false }
 }
 
 /**

@@ -17,7 +17,15 @@ import { tmpdir } from 'node:os'
 
 import { extractDeps, installResolver, locateAppAsar } from './asar-deps.js'
 
+/**
+ * Shared extraction root. `node --test` runs test files in separate processes,
+ * so this directory is published atomically by `extractDeps` under a lock
+ * rather than filled in place.
+ */
 const SCRATCH = join(tmpdir(), 'lmn-it-deps')
+
+/** Per-process memo so repeated calls skip the marker check entirely. */
+let prepared = null
 
 /**
  * Make the asar-shipped Host packages importable, extracting them once.
@@ -25,16 +33,20 @@ const SCRATCH = join(tmpdir(), 'lmn-it-deps')
  * @returns {{depsRoot: string, stats: object}}
  */
 export function prepareDeps() {
+  if (prepared !== null) return prepared
   const asar = locateAppAsar()
   if (asar === null) {
     throw new Error(
       'the packaged Harness app.asar was not found; set DSH_APP_ASAR to its path',
     )
   }
-  mkdirSync(SCRATCH, { recursive: true })
+  // The extraction root itself is created by `extractDeps` while publishing;
+  // pre-creating it here would make an empty directory look like a finished
+  // extraction to a concurrent process.
   const stats = extractDeps(asar, SCRATCH)
   installResolver(SCRATCH)
-  return { depsRoot: SCRATCH, stats }
+  prepared = { depsRoot: SCRATCH, stats }
+  return prepared
 }
 
 /**

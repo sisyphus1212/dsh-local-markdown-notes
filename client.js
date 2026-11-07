@@ -31,6 +31,7 @@ window.__ModuleLoader__.load({
       'panel.blame': 'Blame',
       'panel.blameHint': '把光标放到某一行查看提交信息。',
       'panel.noFile': '从左侧选择一个 Markdown 文件。',
+      'panel.noProject': '先导入或选择一个文件夹。',
       'panel.noCommits': '仓库还没有提交，差异与 blame 暂不可用。',
       'panel.loading': '载入中…',
       'panel.error': '出错了',
@@ -68,6 +69,7 @@ window.__ModuleLoader__.load({
       'panel.blame': 'Blame',
       'panel.blameHint': 'Put the cursor on a line to see its commit.',
       'panel.noFile': 'Pick a Markdown file on the left.',
+      'panel.noProject': 'Import or select a folder first.',
       'panel.noCommits': 'This repository has no commits yet, so diff and blame are unavailable.',
       'panel.loading': 'Loading…',
       'panel.error': 'Something went wrong',
@@ -130,6 +132,13 @@ window.__ModuleLoader__.load({
      */
     const PACKAGE = '@local/local-markdown-notes'
     const NAMESPACE = 'notes'
+    /**
+     * The Host Cordis Service key (`super(ctx, 'notesRemote', …)` in
+     * lib/service.js). `api-gateway` validates it as a nonempty invocation
+     * segment and resolves the receiver with `ctx.get(descriptor.service)`, so
+     * every descriptor must carry it.
+     */
+    const SERVICE = 'notesRemote'
     const SCHEMA = Object.freeze({})
 
     function strictCodec(typeSymbol) {
@@ -139,6 +148,7 @@ window.__ModuleLoader__.load({
     function descriptor(method, params, result) {
       return {
         id: `${PACKAGE}#${NAMESPACE}/${method}`,
+        service: SERVICE,
         namespace: NAMESPACE,
         method,
         invocation: { kind: 'direct' },
@@ -171,6 +181,39 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** `Error.stack` can be huge; the panel is a single line, so cap it. */
+    const FAILURE_TEXT_LIMIT = 800
+
+    function failureText(error) {
+      if (error === null || error === undefined) return ''
+      const lines = []
+      const code = error.code
+      if (code !== undefined && code !== null && code !== '') lines.push(`code=${String(code)}`)
+      const message = error.message ?? String(error)
+      lines.push(`message=${String(message)}`)
+      const stack = typeof error.stack === 'string' ? error.stack : ''
+      if (stack !== '') {
+        const first = stack.split('\n').slice(0, 3).join(' | ')
+        lines.push(`stack=${first}`)
+      }
+      return lines.join(' ').slice(0, FAILURE_TEXT_LIMIT)
+    }
+
+    /**
+     * The rejection `remote.$mount` produced, if it rejected.
+     *
+     * `ctx.remote.$mount` is async and only registers `remote.<namespace>`
+     * once it resolves, so a swallowed rejection shows up much later as the
+     * misleading `namespace "notes" is not mounted`. Keeping the original
+     * error here lets the panel and the console name the real cause.
+     */
+    let mountFailure = null
+
+    function recordMountFailure(error) {
+      mountFailure = failureText(error)
+      console.error('[notes] remote mount failed:', failureText(error), error)
+    }
+
     /**
      * Thin facade over the mounted `notes` Remote namespace. Every call returns
      * the decoded value or throws an Error carrying the Host's `code`.
@@ -179,7 +222,8 @@ window.__ModuleLoader__.load({
       async function call(method, args) {
         const namespace = ctx.get('remote.notes')
         if (namespace === undefined) {
-          const error = new Error('remote namespace "notes" is not mounted')
+          const detail = mountFailure === null ? '' : ` — remote.$mount rejected: ${mountFailure}`
+          const error = new Error(`remote namespace "notes" is not mounted${detail}`)
           error.code = 'notes/remote-unavailable'
           throw error
         }
@@ -192,6 +236,14 @@ window.__ModuleLoader__.load({
         return outcome.value
       }
       return {
+        /**
+         * The recorded `remote.$mount` rejection, one line, or `null`.
+         *
+         * The panel starts with this in its error banner so a half-mounted
+         * deployment shows the real cause instead of the first call's generic
+         * "is not mounted".
+         */
+        mountFailure: () => mountFailure,
         // Every Remote descriptor is strict, so all declared parameters must be
         // present in the call; `null` is the "not supplied" value for the
         // optional ones.
@@ -446,19 +498,29 @@ window.__ModuleLoader__.load({
         [api, report],
       )
 
+      const blameTimer = React.useRef(null)
+      const blameSeq = React.useRef(0)
+
       const onSelectLine = React.useCallback(
-        async (event) => {
+        (event) => {
           if (project === null || file === null) return
           const position = event.currentTarget.selectionStart ?? 0
           const line = draft.slice(0, position).split('\n').length
-          try {
-            const value = await api.gitBlame(project.id, file.path, line)
-            setBlame(value)
-            setTab('blame')
-            setError(null)
-          } catch (caught) {
-            setBlame({ line, entries: [], note: caught?.code ?? 'notes/git-failed' })
-          }
+          if (blameTimer.current !== null) window.clearTimeout(blameTimer.current)
+          const seq = (blameSeq.current += 1)
+          blameTimer.current = window.setTimeout(async () => {
+            blameTimer.current = null
+            try {
+              const value = await api.gitBlame(project.id, file.path, line)
+              if (seq !== blameSeq.current) return
+              setBlame(value)
+              setTab('blame')
+              setError(null)
+            } catch (caught) {
+              if (seq !== blameSeq.current) return
+              setBlame({ line, entries: [], note: caught?.code ?? 'notes/git-failed' })
+            }
+          }, 180)
         },
         [api, draft, file, project],
       )
@@ -571,27 +633,29 @@ window.__ModuleLoader__.load({
             )
 
       const statusPane =
-        status === null
-          ? h('div', { className: 'lmn-note' }, t('panel.loading'))
-          : status.entries.length === 0
-            ? h('div', { className: 'lmn-note' }, t('panel.gitEmpty'))
-            : h(
-                'div',
-                { className: 'lmn-status' },
-                status.entries.map((entry) =>
-                  h(
-                    'button',
-                    {
-                      key: `${entry.path}:${entry.kind}`,
-                      onClick: () => void loadDiff(project, entry.path),
-                      title: entry.path,
-                    },
-                    h('span', { className: 'lmn-badge' }, t(KIND_LABEL[entry.kind] ?? 'panel.modified')),
-                    entry.path,
-                    entry.from === undefined ? null : ` ← ${entry.from}`,
+        project === null
+          ? h('div', { className: 'lmn-note' }, t('panel.noProject'))
+          : status === null
+            ? h('div', { className: 'lmn-note' }, t('panel.loading'))
+            : status.entries.length === 0
+              ? h('div', { className: 'lmn-note' }, t('panel.gitEmpty'))
+              : h(
+                  'div',
+                  { className: 'lmn-status' },
+                  status.entries.map((entry) =>
+                    h(
+                      'button',
+                      {
+                        key: `${entry.path}:${entry.kind}`,
+                        onClick: () => void loadDiff(project, entry.path),
+                        title: entry.path,
+                      },
+                      h('span', { className: 'lmn-badge' }, t(KIND_LABEL[entry.kind] ?? 'panel.modified')),
+                      entry.path,
+                      entry.from === undefined ? null : ` ← ${entry.from}`,
+                    ),
                   ),
-                ),
-              )
+                )
 
       const diffPane =
         diff === null
@@ -701,10 +765,9 @@ window.__ModuleLoader__.load({
 
     return {
       inject: ['slots', 'locale', 'remote'],
-      apply(ctx) {
+      async apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'local-markdown-notes: dictionaries')
         const t = ctx.locale.bind(NS)
-        const api = createApi(ctx)
 
         ctx.effect(() => {
           const style = document.createElement('style')
@@ -714,22 +777,34 @@ window.__ModuleLoader__.load({
           return () => style.remove()
         }, 'local-markdown-notes: styles')
 
+        // `ctx.remote.$mount` is async and only exposes `remote.<namespace>`
+        // once it resolves, so it must be awaited before anything may call the
+        // API. A rejection means the namespace will never appear: record the
+        // real error and stop here instead of mounting a panel that can only
+        // fail with a misleading "is not mounted".
+        let disposeRemote = null
+        try {
+          disposeRemote = await ctx.remote.$mount(buildContribution())
+        } catch (error) {
+          recordMountFailure(error)
+          const failure = new Error(`notes remote mount failed: ${mountFailure}`)
+          failure.code = error?.code ?? 'notes/remote-mount-failed'
+          failure.cause = error
+          throw failure
+        }
+
         ctx.effect(
-          () => {
-            const pending = ctx.remote.$mount(buildContribution())
-            return () => {
-              void Promise.resolve(pending)
-                .then((unmount) => (typeof unmount === 'function' ? unmount() : undefined))
-                .catch(() => {})
-            }
+          () => () => {
+            if (typeof disposeRemote === 'function') disposeRemote()
           },
-          'local-markdown-notes: mount notes Remote',
+          'local-markdown-notes: unmount notes Remote',
         )
+
+        const api = createApi(ctx)
 
         ctx.effect(
           () =>
-            ctx.slots.inject('sidebar.panellist', () =>
-              ctx.slots.register(
+            ctx.slots.inject('sidebar.panellist', () =>              ctx.slots.register(
                 {
                   name: 'sidebar.panellist',
                   id: PANEL_ID,

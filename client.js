@@ -867,6 +867,86 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
     const MD_EDIT_QUOTE = /^([ \t]*)(>)([ \t]?)(.*)$/
 
     /**
+     * A command cheatsheet is a Markdown file whose lines are shell commands
+     * with no fence around them. None of those lines is a Markdown construct,
+     * so the structural painter would leave them as plain text; when most of
+     * the document reads that way, its lines are painted as commands instead.
+     */
+    const RX_COMMAND_LINE = /^[ \t]*([A-Za-z0-9][\w.+-]*)[ \t]+\S/
+    const RX_COMMAND_LEAD = /^([ \t]*)([A-Za-z0-9][\w.+-]*)([\s\S]*)$/
+    const RX_COMMAND_NAME = /^[a-z][a-z0-9.+-]*$/
+    const RX_COMMAND_CONTINUATION = /^[ \t]+(?:'|"|--?[A-Za-z]|\S+=)/
+    const RX_SHELL_HINT = /['"]|\/|=|(?:^|\s)--?[A-Za-z]|\\[ \t]*$/
+    const CMD_TOKEN =
+      /('[^']*')|("[^"]*")|(?<=[\s,=(])(--?[A-Za-z][\w-]*)|([\w.+-]*\/[\w./+-]*)|(\b\d[\d:.]*\b)/g
+
+    /**
+     * True when the draft is a note of commands rather than prose.
+     *
+     * A lowercase leading word plus a shell hint ("=", a slash, a quote, a
+     * flag or a trailing line continuation) marks a command line, and an
+     * indented continuation of one counts as part of it. Prose keeps a
+     * capitalised first word, so ordinary sentences stay uncounted.
+     */
+    function looksLikeCommandNote(lines) {
+      let commands = 0
+      let prose = 0
+      for (const line of lines) {
+        if (line.trim() === '') continue
+        if (
+          MD_EDIT_HEADING.test(line) ||
+          MD_EDIT_QUOTE.test(line) ||
+          MD_EDIT_BULLET.test(line) ||
+          MD_FENCE.test(line)
+        ) {
+          continue
+        }
+        const head = RX_COMMAND_LINE.exec(line)
+        if (head !== null && RX_COMMAND_NAME.test(head[1]) && RX_SHELL_HINT.test(line)) commands += 1
+        else if (RX_COMMAND_CONTINUATION.test(line)) commands += 1
+        else prose += 1
+      }
+      return commands >= 2 && commands > prose
+    }
+
+    /** Paint the quoted arguments, paths, flags and numbers of one command. */
+    function paintCommandText(text, keyPrefix) {
+      const out = []
+      let last = 0
+      let counter = 0
+      CMD_TOKEN.lastIndex = 0
+      let match = CMD_TOKEN.exec(text)
+      while (match !== null) {
+        if (match.index > last) out.push(text.slice(last, match.index))
+        const className =
+          match[1] !== undefined || match[2] !== undefined
+            ? 'lmn-tok-string'
+            : match[3] !== undefined
+              ? 'lmn-tok-constant'
+              : match[4] !== undefined
+                ? 'lmn-tok-type'
+                : 'lmn-tok-number'
+        out.push(h('span', { key: `${keyPrefix}:${counter}`, className }, match[0]))
+        counter += 1
+        last = match.index + match[0].length
+        match = CMD_TOKEN.exec(text)
+      }
+      if (last < text.length) out.push(text.slice(last))
+      return out
+    }
+
+    /** Paint one command line, keeping its command name distinguishable. */
+    function paintCommandLine(line, keyPrefix) {
+      const lead = RX_COMMAND_LEAD.exec(line)
+      if (lead === null) return paintCommandText(line, keyPrefix)
+      return [
+        lead[1],
+        h('span', { key: `${keyPrefix}:cmd`, className: 'lmn-tok-function' }, lead[2]),
+        ...paintCommandText(lead[3], keyPrefix),
+      ]
+    }
+
+    /**
      * Past this size the mirrored layer is not worth its render cost; the editor
      * falls back to uncoloured lines and stays responsive.
      */
@@ -889,6 +969,7 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
 
       const out = []
       let fence = null
+      const commandNote = looksLikeCommandNote(lines)
 
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]
@@ -919,8 +1000,12 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
               'div',
               { key, className: 'lmn-hl-line' },
               h('span', { className: 'lmn-tok-comment' }, `${heading[1]}${heading[2]}`),
-              h('span', { className: 'lmn-md-heading' }, heading[3]),
-              colorizeInline(heading[4], `h${index}`),
+              h(
+                'span',
+                { className: 'lmn-md-heading' },
+                heading[3],
+                colorizeInline(heading[4], `h${index}`),
+              ),
             ),
           )
           continue
@@ -951,6 +1036,11 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
               colorizeInline(bullet[4], `b${index}`),
             ),
           )
+          continue
+        }
+
+        if (commandNote && line.trim() !== '') {
+          out.push(h('div', { key, className: 'lmn-hl-line' }, paintCommandLine(line, `c${index}`)))
           continue
         }
 

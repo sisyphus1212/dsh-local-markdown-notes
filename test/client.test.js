@@ -1846,6 +1846,64 @@ test('the colour layer paints markdown structure and fenced code', async () => {
   assert.ok(line, 'the fenced body keeps its own painted line')
 })
 
+test('a heading paints its own text, not just the marker', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { area } = await openWithGutter(panel)
+
+  area.props.onChange({ target: { value: '# 查看规则匹配端口\n' } })
+  await panel.runtime.flush()
+
+  const heading = findOne(findOne(panel.runtime.tree(), 'lmn-hl'), 'lmn-md-heading')
+  assert.ok(heading, 'the heading carries the heading class')
+  assert.equal(textsOf(heading), ' 查看规则匹配端口', 'the heading text sits inside the painted span')
+})
+
+test('an unfenced command note paints each command line', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { area } = await openWithGutter(panel)
+
+  const draft = [
+    '# 查看规则匹配端口',
+    '',
+    'ovs-appctl ofproto/trace br-jmnd \\',
+    "    'in_port=dpdk0,dl_src=02:11:22:33:44:63'",
+    '',
+    'ovs-appctl dpctl/show',
+    '',
+  ].join('\n')
+  area.props.onChange({ target: { value: draft } })
+  await panel.runtime.flush()
+
+  const lines = findAll(findOne(panel.runtime.tree(), 'lmn-hl'), 'lmn-hl-line')
+  assert.deepEqual(lines.map(textsOf), draft.split('\n'), 'every painted line still matches its source')
+
+  const trace = lines.find((item) => textsOf(item).startsWith('ovs-appctl ofproto'))
+  assert.ok(findOne(trace, 'lmn-tok-function'), 'the command name carries the function colour')
+  assert.ok(findOne(trace, 'lmn-tok-type'), 'the subcommand path carries the type colour')
+
+  const args = lines.find((item) => textsOf(item).trim().startsWith("'in_port="))
+  assert.ok(findOne(args, 'lmn-tok-string'), 'the quoted argument list is painted as a string')
+
+  const show = lines.find((item) => textsOf(item) === 'ovs-appctl dpctl/show')
+  assert.ok(findOne(show, 'lmn-tok-function'), 'the second command is painted too')
+})
+
+test('prose keeps its plain body colour', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { area } = await openWithGutter(panel)
+
+  const draft = 'This note explains the bridge.\nIt has two sentences.\n'
+  area.props.onChange({ target: { value: draft } })
+  await panel.runtime.flush()
+
+  const hl = findOne(panel.runtime.tree(), 'lmn-hl')
+  assert.deepEqual(findAll(hl, 'lmn-hl-line').map(textsOf), draft.split('\n'))
+  assert.equal(findAll(hl, 'lmn-tok-function').length, 0, 'no command name is invented')
+})
+
 test('scrolling the text carries the colour layer with it', async () => {
   const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
   const panel = await mountPanel({ namespace })

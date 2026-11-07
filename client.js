@@ -91,7 +91,7 @@ window.__ModuleLoader__.load({
 .lmn-btn{font:inherit;color:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-alias-bg-layer-2,transparent);padding:3px 8px}
 .lmn-btn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.04))}
 .lmn-btn[disabled]{opacity:.5;cursor:default}
-.lmn-btn-primary{background:var(--dsw-alias-brand-primary,#0f1115);color:var(--dsw-alias-label-inverted,#fff);border-color:transparent}
+.lmn-btn-primary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
 .lmn-list{overflow:auto;min-height:0;padding:6px}
 .lmn-item{display:flex;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;border-radius:8px;padding:5px 8px;cursor:pointer}
 .lmn-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}
@@ -109,7 +109,7 @@ window.__ModuleLoader__.load({
 .lmn-tab[aria-selected="true"]{color:inherit;background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.08))}
 .lmn-pane{overflow:auto;min-height:0;padding:8px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word}
 .lmn-note{padding:10px 12px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
-.lmn-error{margin:8px 12px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-static-red-50,#fef2f2);color:var(--dsw-alias-static-red-900,#570c0c);border:1px solid var(--dsw-alias-static-red-400-a12,rgba(242,90,90,.12))}
+.lmn-error{margin:8px 12px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-state-error-primary,#ec1313);border:1px solid var(--dsw-alias-state-error-primary,#ec1313)}
 .lmn-status{display:flex;flex-direction:column;gap:2px}
 .lmn-status button{font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:inherit;text-align:left;background:none;border:0;border-radius:6px;padding:2px 6px;cursor:pointer}
 .lmn-status button:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}

@@ -392,3 +392,39 @@ test('both dictionaries define the "no project" Git tab hint', async () => {
   assert.notEqual(zh['panel.noProject'], '')
   assert.notEqual(en['panel.noProject'], '')
 })
+
+test('the stylesheet only references theme tokens the host actually declares', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const css = styles[0].textContent
+
+  // The host declares 114 --dsw-alias-* tokens; none of these four exist, so a
+  // reference silently falls back to the literal and breaks the dark theme.
+  for (const undeclared of [
+    '--dsw-alias-label-inverted',
+    '--dsw-alias-static-red-50',
+    '--dsw-alias-static-red-900',
+    '--dsw-alias-static-red-400-a12',
+  ]) {
+    assert.ok(
+      !css.includes(undeclared),
+      `${undeclared} is not declared by the host and must not be referenced`,
+    )
+  }
+
+  const primary = css.split('\n').find((line) => line.startsWith('.lmn-btn-primary{'))
+  assert.ok(primary, 'the primary button rule exists')
+  assert.ok(
+    primary.includes('var(--dsw-alias-label-primary-foreground'),
+    `the primary button foreground must follow the theme: ${primary}`,
+  )
+
+  const banner = css.split('\n').find((line) => line.startsWith('.lmn-error{'))
+  assert.ok(banner, 'the error banner rule exists')
+  assert.ok(
+    banner.includes('var(--dsw-alias-state-error-primary'),
+    `the error banner must use the host error token: ${banner}`,
+  )
+})

@@ -242,7 +242,35 @@ describe('host integration: real filesystem', { skip: !hasGit && 'git is unavail
           return true
         },
       )
+      // The same traversal written with backslashes must be refused too: the
+      // panel may hand over a Windows-shaped relative path.
+      await assert.rejects(
+        () => host.remote.readFile(project.id, '..\\escape.md'),
+        (error) => {
+          assert.equal(error.code, 'notes/bad-relative-path')
+          assert.match(error.message, /parent traversal is not allowed: \.\.\\escape\.md/)
+          return true
+        },
+      )
+      // An absolute path is refused outright, in both slash directions.
+      for (const absolute of [join(outside, 'escape.md'), join(outside, 'escape.md').replace(/\\/g, '/')]) {
+        await assert.rejects(
+          () => host.remote.readFile(project.id, absolute),
+          (error) => {
+            assert.equal(error.code, 'notes/bad-relative-path')
+            assert.match(error.message, /(drive-qualified|absolute) path is not allowed/)
+            return true
+          },
+        )
+      }
       assert.equal(existsSync(join(outside, 'escape.md')), false)
+
+      // A refused path must also never reach the disk through a save.
+      await assert.rejects(
+        () => host.remote.writeFile(project.id, '../written.md', 'nope\n', null),
+        (error) => error.code === 'notes/bad-relative-path',
+      )
+      assert.equal(existsSync(join(outside, 'written.md')), false)
     } finally {
       await host.dispose()
     }

@@ -92,6 +92,8 @@ window.__ModuleLoader__.load({
 .lmn-btn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.04))}
 .lmn-btn[disabled]{opacity:.5;cursor:default}
 .lmn-btn-primary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
+.lmn-btn.lmn-btn-primary:hover{background:var(--dsw-alias-button-primary-hover,#43454a);color:var(--dsw-alias-label-primary-foreground,#fff)}
+.lmn-btn.lmn-btn-primary:focus-visible{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
 .lmn-list{overflow:auto;min-height:0;padding:6px}
 .lmn-item{display:flex;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;border-radius:8px;padding:5px 8px;cursor:pointer}
 .lmn-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}

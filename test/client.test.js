@@ -428,3 +428,62 @@ test('the stylesheet only references theme tokens the host actually declares', a
     `the error banner must use the host error token: ${banner}`,
   )
 })
+
+/**
+ * Specificity of a single simple selector, computed the way a browser does for
+ * class/pseudo-class selectors: (classes + pseudo-classes) outrank a bare class.
+ */
+function classSpecificity(selector) {
+  return (selector.match(/\.[A-Za-z0-9_-]+|:[A-Za-z-]+/g) ?? []).length
+}
+
+test('the primary button keeps a readable background on hover', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const rules = styles[0].textContent
+    .split('\n')
+    // `.lmn-btn:hover{...}` and `.lmn-btn.lmn-btn-primary:hover{...}` both match
+    // the primary button, so index order is the tiebreaker.
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line.includes(':hover'))
+
+  const generic = rules.find(({ line }) => line.startsWith('.lmn-btn:hover{'))
+  const primary = rules.find(({ line }) => line.startsWith('.lmn-btn.lmn-btn-primary:hover{'))
+
+  assert.ok(generic, 'the generic button hover rule exists')
+  assert.ok(primary, 'the primary button needs its own hover rule')
+
+  // `.lmn-btn:hover` is (0,2,0); the primary rule must beat it, never lose to it,
+  // otherwise the background flips to the light layer while the text stays white.
+  assert.ok(
+    classSpecificity('.lmn-btn.lmn-btn-primary:hover') >
+      classSpecificity('.lmn-btn:hover'),
+    'the primary hover selector must outrank the generic one',
+  )
+  assert.ok(
+    primary.index > generic.index,
+    'the primary hover rule must be declared after the generic one',
+  )
+  assert.ok(
+    primary.line.includes('var(--dsw-alias-button-primary-hover'),
+    `the hovered primary button must use the host primary-hover token: ${primary.line}`,
+  )
+  // Setting only the background lets the foreground fall back to whatever wins
+  // in the other theme, so the hover rule must pin the readable pair itself.
+  assert.ok(
+    primary.line.includes('color:var(--dsw-alias-label-primary-foreground'),
+    `the hovered primary button must keep its themed foreground: ${primary.line}`,
+  )
+
+  const focus = styles[0].textContent
+    .split('\n')
+    .find((line) => line.startsWith('.lmn-btn.lmn-btn-primary:focus-visible{'))
+  assert.ok(focus, 'keyboard focus needs the same self-consistent rule')
+  assert.ok(
+    focus.includes('color:var(--dsw-alias-label-primary-foreground'),
+    `focused primary button must keep its themed foreground: ${focus}`,
+  )
+})
+

@@ -1137,29 +1137,22 @@ test('the blame chip summarises the cursor line and carries the full commit card
   )
 })
 
-test('a line with no commit history shows an uncommitted chip instead of a card', async () => {
+test('a line with no commit history shows no blame bar at all', async () => {
   const { namespace } = treeNamespace({
     entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
   })
   const panel = await mountPanel({ namespace })
   await openFileAt(panel, 5)
 
-  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
-  assert.ok(chip, 'the chip still renders')
-  assert.equal(textsOf(chip), `${NS}:panel.uncommitted`, 'the chip says the line is uncommitted')
-  assert.ok(
-    String(chip.props.className).includes('is-uncommitted'),
-    'the chip is styled as uncommitted',
-  )
-  assert.equal(findAll(panel.runtime.tree(), 'lmn-blame-card').length, 0, 'no card to hover')
+  const tree = panel.runtime.tree()
+  assert.equal(findOne(tree, 'lmn-blame-bar'), undefined, 'nothing to attribute means no bar')
+  assert.equal(findAll(tree, 'lmn-blame-chip').length, 0, 'no placeholder chip')
+  assert.equal(findAll(tree, 'lmn-blame-card').length, 0, 'no card to hover')
 })
 
-test('both locales name the uncommitted state and the card labels', () => {
+test('both locales name the card labels', () => {
   const zh = source.slice(source.indexOf('const ZH = {'), source.indexOf('const EN = {'))
   const en = source.slice(source.indexOf('const EN = {'), source.indexOf('const STYLE ='))
-
-  assert.ok(zh.includes("'panel.uncommitted': '未提交'"), 'the Chinese dictionary has the key')
-  assert.ok(en.includes("'panel.uncommitted': 'Uncommitted'"), 'the English dictionary has the key')
 
   for (const key of ['panel.blameAuthor', 'panel.blameDate', 'panel.blameCommit', 'panel.blameSummary']) {
     assert.ok(zh.includes(`'${key}'`), `the Chinese dictionary has ${key}`)
@@ -1178,7 +1171,7 @@ const ZERO_SHA_ENTRY = {
   summary: 'Version of 常用命令.md from 常用命令.md',
 }
 
-test('an all-zero blame sha is shown as uncommitted, not as a 000000000 commit', async () => {
+test('an all-zero blame sha renders no chip at all', async () => {
   const { namespace } = treeNamespace({
     entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
     blameEntries: [ZERO_SHA_ENTRY],
@@ -1186,22 +1179,10 @@ test('an all-zero blame sha is shown as uncommitted, not as a 000000000 commit',
   const panel = await mountPanel({ namespace })
   await openFileAt(panel, 5)
 
-  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
-  assert.ok(chip, 'the chip still renders for an all-zero entry')
-  assert.equal(
-    textsOf(chip),
-    `${NS}:panel.uncommitted`,
-    'the chip reports the line as uncommitted instead of naming the zero sha',
-  )
-  assert.ok(
-    String(chip.props.className).includes('is-uncommitted'),
-    'the chip is styled as uncommitted, so the declared style matches the text',
-  )
-  assert.equal(
-    findAll(panel.runtime.tree(), 'lmn-blame-card').length,
-    0,
-    'an uncommitted line has no commit card to hover',
-  )
+  const tree = panel.runtime.tree()
+  assert.equal(findOne(tree, 'lmn-blame-bar'), undefined, 'an all-zero entry has nothing to show')
+  assert.equal(findAll(tree, 'lmn-blame-chip').length, 0, 'no chip to read as a commit')
+  assert.equal(findAll(tree, 'lmn-blame-card').length, 0, 'and no card to hover')
 })
 
 test('a committed line beside an all-zero line still names its own commit', async () => {
@@ -1222,10 +1203,6 @@ test('a committed line beside an all-zero line still names its own commit', asyn
   assert.ok(text.includes('8ebd47bbc'), `the committed line still names its sha: ${text}`)
   assert.ok(text.includes('E2E Fixture'), `the committed line still names its author: ${text}`)
   assert.ok(!text.includes('000000000'), `the zero-sha line did not win: ${text}`)
-  assert.ok(
-    !String(chip.props.className).includes('is-uncommitted'),
-    'a committed line is not styled as uncommitted',
-  )
   assert.ok(findOne(panel.runtime.tree(), 'lmn-blame-card'), 'the commit card is present')
 })
 
@@ -1840,9 +1817,10 @@ test('the preview shows no line numbers', async () => {
   assert.equal(findOne(tree, 'lmn-code'), undefined, 'the editing row is gone entirely')
 })
 
-test('the uncommitted chip is anchored to the cursor line', async () => {
+test('the blame chip names the line its commit describes', async () => {
   const { namespace } = treeNamespace({
     entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    blameEntries: [BLAME_ENTRY],
   })
   const panel = await mountPanel({ namespace })
 
@@ -1850,15 +1828,10 @@ test('the uncommitted chip is anchored to the cursor line', async () => {
   await openFileAt(panel, 5)
 
   const bar = findOne(panel.runtime.tree(), 'lmn-blame-bar')
-  assert.ok(bar, 'the blame bar renders for the cursor line')
-  const anchor = findOne(bar, 'lmn-blame-line')
-  assert.ok(anchor, 'the bar names the line it describes')
-  assert.equal(textsOf(anchor), 'L2', 'the anchor matches the cursor line')
-  assert.equal(
-    textsOf(findOne(bar, 'lmn-blame-chip')),
-    `${NS}:panel.uncommitted`,
-    'the chip itself still says only what the state is',
-  )
+  assert.ok(bar, 'the blame bar renders for a blamable line')
+  const chip = findOne(bar, 'lmn-blame-chip')
+  assert.ok(chip, 'the bar carries the chip')
+  assert.ok(textsOf(chip).includes('L2'), `the chip names its own line: ${textsOf(chip)}`)
 })
 
 // ---------------------------------------------------------------------------

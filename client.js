@@ -46,7 +46,6 @@ window.__ModuleLoader__.load({
       'panel.ignored': '已忽略',
       'panel.unmodified': '未改动',
       'panel.modifiedDirty': '有未保存改动',
-      'panel.uncommitted': '未提交',
       'panel.blameAuthor': '作者',
       'panel.blameDate': '日期',
       'panel.blameCommit': '提交',
@@ -99,7 +98,6 @@ window.__ModuleLoader__.load({
       'panel.ignored': 'Ignored',
       'panel.unmodified': 'Unchanged',
       'panel.modifiedDirty': 'Unsaved changes',
-      'panel.uncommitted': 'Uncommitted',
       'panel.blameAuthor': 'Author',
       'panel.blameDate': 'Date',
       'panel.blameCommit': 'Commit',
@@ -174,11 +172,9 @@ window.__ModuleLoader__.load({
 .lmn-kv{display:flex;gap:6px}
 .lmn-kv b{font-weight:600}
 .lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:10px 0 0 44px;min-width:0}
-.lmn-blame-line{color:var(--dsw-alias-label-tertiary,#81858c);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px}
 .lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;min-width:0;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;outline:none;cursor:default}
 .lmn-blame-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-blame-chip:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
-.lmn-blame-chip.is-uncommitted{color:var(--dsw-alias-label-tertiary,#81858c);font-style:italic}
 .lmn-blame-card{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;min-width:240px;max-width:360px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));box-shadow:0 6px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary,CanvasText);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;text-align:left;cursor:auto}
 .lmn-blame-chip:hover .lmn-blame-card,.lmn-blame-chip:focus-within .lmn-blame-card{display:block}
 .lmn-blame-card b{font-weight:600;color:var(--dsw-alias-label-secondary,#61666b);margin-right:4px}
@@ -971,7 +967,6 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
       const [diff, setDiff] = React.useState(null)
       const [diffPath, setDiffPath] = React.useState(null)
       const [blame, setBlame] = React.useState(null)
-      const [cursorLine, setCursorLine] = React.useState(null)
       const [lineEntry, setLineEntry] = React.useState(null)
       const [viewTarget, setViewTarget] = React.useState('')
       const [creating, setCreating] = React.useState(null)
@@ -1057,7 +1052,6 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
           setFile(null)
           setDraft('')
           setBlame(null)
-          setCursorLine(null)
           setLineEntry(null)
           setDiff(null)
           setDiffPath(null)
@@ -1081,7 +1075,6 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
             setFile({ path: value.path, version: value.version, content: value.content })
             setDraft(value.content)
             setBlame(null)
-            setCursorLine(null)
             setLineEntry(null)
             setNotice(null)
             setViewTarget(parentOf(value.path))
@@ -1148,7 +1141,6 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
               setFile(null)
               setDraft('')
               setBlame(null)
-              setCursorLine(null)
               setLineEntry(null)
               setDiff(null)
               setDiffPath(null)
@@ -1267,7 +1259,6 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
           if (project === null || file === null) return
           const position = event.currentTarget.selectionStart ?? 0
           const line = draft.slice(0, position).split('\n').length
-          setCursorLine(line)
           if (blameTimer.current !== null) window.clearTimeout(blameTimer.current)
           const seq = (blameSeq.current += 1)
           blameTimer.current = window.setTimeout(async () => {
@@ -1619,48 +1610,42 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
        * The GitLens-style chip above the editor: the commit that last touched the
        * cursor's line, with the full commit card revealed by CSS on hover or focus.
        */
+      // Nothing to attribute means nothing to show: a line git cannot blame
+      // (never committed, or outside history) renders no bar at all rather than
+      // a placeholder chip that only says "uncommitted" and names no commit.
       const blameBar =
-        cursorLine === null
+        lineEntry === null
           ? null
           : h(
               'div',
               { className: 'lmn-blame-bar' },
-              // The uncommitted placeholder names no line on its own, which reads
-              // as a stray label; anchor it to the cursor like the commit chip.
-              lineEntry === null ? h('span', { className: 'lmn-blame-line' }, `L${cursorLine}`) : null,
-              lineEntry === null
-                ? h(
+              h(
+                'div',
+                { className: 'lmn-blame-chip', tabIndex: 0 },
+                h(
+                  'span',
+                  { className: 'lmn-blame-chip-text' },
+                  `L${lineEntry.finalLine ?? lineEntry.line} · ${String(lineEntry.sha ?? '').slice(0, 9)} · ${lineEntry.author ?? '?'} · ${blameDay(lineEntry.authorTime)}`,
+                ),
+                h(
+                  'div',
+                  { className: 'lmn-blame-card' },
+                  h('div', null, h('b', null, t('panel.blameAuthor')), lineEntry.author ?? '?'),
+                  h(
                     'div',
-                    { className: 'lmn-blame-chip is-uncommitted', tabIndex: 0 },
-                    h('span', { className: 'lmn-blame-chip-text' }, t('panel.uncommitted')),
-                  )
-                : h(
-                    'div',
-                    { className: 'lmn-blame-chip', tabIndex: 0 },
-                    h(
-                      'span',
-                      { className: 'lmn-blame-chip-text' },
-                      `L${lineEntry.finalLine ?? lineEntry.line} · ${String(lineEntry.sha ?? '').slice(0, 9)} · ${lineEntry.author ?? '?'} · ${blameDay(lineEntry.authorTime)}`,
-                    ),
-                    h(
-                      'div',
-                      { className: 'lmn-blame-card' },
-                      h('div', null, h('b', null, t('panel.blameAuthor')), lineEntry.author ?? '?'),
-                      h(
-                        'div',
-                        null,
-                        h('b', null, t('panel.blameDate')),
-                        blameDay(lineEntry.authorTime) || '?',
-                      ),
-                      h(
-                        'div',
-                        null,
-                        h('b', null, t('panel.blameCommit')),
-                        String(lineEntry.sha ?? ''),
-                      ),
-                      h('div', null, h('b', null, t('panel.blameSummary')), lineEntry.summary ?? ''),
-                    ),
+                    null,
+                    h('b', null, t('panel.blameDate')),
+                    blameDay(lineEntry.authorTime) || '?',
                   ),
+                  h(
+                    'div',
+                    null,
+                    h('b', null, t('panel.blameCommit')),
+                    String(lineEntry.sha ?? ''),
+                  ),
+                  h('div', null, h('b', null, t('panel.blameSummary')), lineEntry.summary ?? ''),
+                ),
+              ),
             )
 
       // VS Code numbers every line, including the empty one a trailing newline

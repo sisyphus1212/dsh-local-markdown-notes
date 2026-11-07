@@ -416,6 +416,14 @@ describe('host integration: real git subprocess', { skip: !hasGit && 'git is una
       assert.match(diff.diff, /^diff --git a\/doc\.md b\/doc\.md/m)
       assert.match(diff.diff, /^-first$/m)
       assert.match(diff.diff, /^\+second$/m)
+
+      // The same edit must show up as a modification of a tracked file, not as
+      // an untracked one.
+      const status = await host.remote.gitStatus(project.id)
+      assert.deepEqual(
+        status.entries.map((entry) => `${entry.kind}:${entry.path}`),
+        ['modified:doc.md'],
+      )
     } finally {
       await host.dispose()
     }
@@ -437,6 +445,28 @@ describe('host integration: real git subprocess', { skip: !hasGit && 'git is una
       assert.match(blame.entries[0].sha, /^[0-9a-f]{40}$/)
       assert.equal(blame.entries[0].finalLine, 2)
       assert.equal(blame.entries[0].author, 'Notes Integration')
+    } finally {
+      await host.dispose()
+    }
+  })
+
+  test('every git method reports notes/unknown-project for an unregistered id', async () => {
+    const host = await createHostContext()
+    try {
+      const calls = [
+        () => host.remote.gitStatus('ghost-00000000'),
+        () => host.remote.gitDiff('ghost-00000000', 'doc.md'),
+        () => host.remote.gitBlame('ghost-00000000', 'doc.md', 1),
+        () => host.remote.listEntries('ghost-00000000', ''),
+        () => host.remote.readFile('ghost-00000000', 'doc.md'),
+      ]
+      for (const call of calls) {
+        await assert.rejects(call, (error) => {
+          assert.equal(error.code, 'notes/unknown-project')
+          assert.match(error.message, /unknown project "ghost-00000000"/)
+          return true
+        })
+      }
     } finally {
       await host.dispose()
     }

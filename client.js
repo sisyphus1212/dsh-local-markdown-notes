@@ -117,29 +117,29 @@ window.__ModuleLoader__.load({
     const STYLE = `
 .lmn-root{display:flex;height:100%;min-height:0;background:var(--dsw-alias-bg-base,Canvas);color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:18px}
 .lmn-side{width:260px;flex:0 0 260px;border-right:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));display:flex;flex-direction:column;min-height:0}
-.lmn-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));font-weight:600}
+.lmn-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
+.lmn-side-title{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-btn{font:inherit;color:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-alias-bg-layer-2,transparent);padding:3px 8px}
 .lmn-btn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.04))}
 .lmn-btn[disabled]{opacity:.5;cursor:default}
 .lmn-btn-primary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
 .lmn-btn.lmn-btn-primary:hover{background:var(--dsw-alias-button-primary-hover,#43454a);color:var(--dsw-alias-label-primary-foreground,#fff)}
 .lmn-btn.lmn-btn-primary:focus-visible{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
-.lmn-list{overflow:auto;min-height:0;padding:6px}
-.lmn-item{display:flex;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;border-radius:8px;padding:5px 8px;cursor:pointer}
-.lmn-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}
-.lmn-item[aria-selected="true"]{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.08))}
-.lmn-item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.lmn-tree{display:flex;flex-direction:column;gap:1px}
+.lmn-list{overflow:auto;min-height:0;padding:0}
+.lmn-tree{display:flex;flex-direction:column;padding:0 0 6px}
 .lmn-node{display:block;min-width:0}
-.lmn-row{position:relative;display:flex;align-items:center;gap:2px;min-width:0;border-radius:6px;cursor:pointer}
-.lmn-row:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}
-.lmn-row.is-selected{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.08))}
-.lmn-row .lmn-item{flex:1;min-width:0;border-radius:6px;padding:4px 6px}
-.lmn-row .lmn-item:hover,.lmn-row .lmn-item[aria-selected="true"]{background:none}
-.lmn-chevron,.lmn-chevron-spacer{flex:0 0 14px;width:14px;text-align:center;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,#81858c)}
-.lmn-remove{opacity:0;transition:opacity .12s;padding:1px 6px;background:none;border-color:transparent}
+.lmn-row{position:relative;display:flex;align-items:center;gap:3px;height:22px;padding-right:4px;cursor:pointer;user-select:none;border-radius:3px}
+.lmn-row:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.045))}
+.lmn-row.is-selected{background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
+.lmn-chevron{flex:0 0 16px;width:16px;height:16px;display:grid;place-items:center;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-icon{flex:0 0 16px;width:16px;height:16px;display:grid;place-items:center;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-name{flex:1;min-width:0;font-size:13px;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lmn-name-root{font-size:11px;font-weight:600;letter-spacing:.05em}
+.lmn-remove{flex:0 0 auto;opacity:0;transition:opacity .1s;padding:0 4px;line-height:16px;font:inherit;font-size:12px;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
 .lmn-row:hover .lmn-remove,.lmn-remove:focus-visible{opacity:1}
-.lmn-item-sub{color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lmn-iconbtn{flex:0 0 auto;display:grid;place-items:center;width:22px;height:22px;padding:0;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
+.lmn-iconbtn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.06));color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-iconbtn[disabled]{opacity:.4;cursor:default}
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
@@ -168,12 +168,12 @@ window.__ModuleLoader__.load({
 .lmn-blame-card{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;min-width:240px;max-width:360px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));box-shadow:0 6px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary,CanvasText);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;text-align:left;cursor:auto}
 .lmn-blame-chip:hover .lmn-blame-card,.lmn-blame-chip:focus-within .lmn-blame-card{display:block}
 .lmn-blame-card b{font-weight:600;color:var(--dsw-alias-label-secondary,#61666b);margin-right:4px}
-.lmn-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));min-width:0}
+.lmn-actions{display:flex;align-items:center;gap:2px;padding:2px 6px 2px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.045));min-width:0}
 .lmn-actions-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
 .lmn-create{display:flex;align-items:center;gap:4px;padding:2px 6px;min-width:0}
 .lmn-create input{flex:1;min-width:0;font:inherit;font-size:12px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:6px;padding:2px 6px;outline:none}
 .lmn-create input:focus{border-color:var(--dsw-alias-brand-primary,#0f1115)}
-.lmn-indent{position:absolute;top:2px;bottom:2px;width:1px;background:var(--dsw-alias-border-l1,rgba(0,0,0,.08));pointer-events:none}
+.lmn-indent{position:absolute;top:0;bottom:0;width:1px;background:var(--dsw-alias-border-l1,rgba(0,0,0,.07));pointer-events:none}
 .lmn-seg{display:inline-flex;align-items:center;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:8px;overflow:hidden}
 .lmn-seg button{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;padding:3px 10px;cursor:pointer}
 .lmn-seg button[aria-pressed="true"]{color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
@@ -944,11 +944,129 @@ window.__ModuleLoader__.load({
 
       const dirty = file !== null && draft !== (file.content ?? draft) && busy !== 'save'
 
-      /** Chevron gutter: folders get an arrow, files keep the width with a spacer. */
+      /**
+       * VS Code draws its disclosure caret as a rotated glyph rather than a text
+       * character, so it sits on the row's optical centre and keeps a fixed gutter.
+       */
       const chevron = (isDirectory, open) =>
-        isDirectory
-          ? h('span', { className: 'lmn-chevron', 'aria-hidden': 'true' }, open ? '▾' : '▸')
-          : h('span', { className: 'lmn-chevron-spacer', 'aria-hidden': 'true' })
+        h(
+          'span',
+          { className: 'lmn-chevron', 'aria-hidden': 'true' },
+          isDirectory
+            ? h(
+                'svg',
+                { viewBox: '0 0 16 16', width: 16, height: 16 },
+                h('path', {
+                  d: 'M6 3.5 10.5 8 6 12.5',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 1.4,
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                  transform: open ? 'rotate(90 8 8)' : undefined,
+                }),
+              )
+            : null,
+        )
+
+      /** Per-extension colours, in the spirit of a VS Code icon theme. */
+      const ICON_COLORS = {
+        md: '#519aba', markdown: '#519aba', mdx: '#519aba',
+        json: '#cbcb41', jsonc: '#cbcb41', yml: '#cbcb41', yaml: '#cbcb41',
+        js: '#cbcb41', mjs: '#cbcb41', cjs: '#cbcb41', jsx: '#519aba',
+        ts: '#519aba', tsx: '#519aba', vue: '#41b883', svelte: '#ff3e00',
+        css: '#519aba', scss: '#ca6f9c', less: '#519aba',
+        html: '#e37933', htm: '#e37933', xml: '#e37933',
+        py: '#3572a5', sh: '#89e051', bash: '#89e051', zsh: '#89e051',
+        go: '#519aba', rs: '#dea584', c: '#5998c5', h: '#5998c5',
+        cpp: '#519aba', java: '#cc3e44', toml: '#9c4221', ini: '#9c4221',
+        png: '#a074c4', jpg: '#a074c4', jpeg: '#a074c4', gif: '#a074c4',
+        svg: '#ffb13b', pdf: '#cc3e44', zip: '#8a9199',
+      }
+      const fileColor = (name) => {
+        const lower = String(name ?? '').toLowerCase()
+        if (lower.startsWith('.')) return '#8a9199'
+        if (lower.startsWith('readme')) return '#519aba'
+        const dot = lower.lastIndexOf('.')
+        if (dot < 0) return '#8a9199'
+        return ICON_COLORS[lower.slice(dot + 1)] ?? '#8a9199'
+      }
+
+      const fileGlyph = (name) =>
+        h(
+          'span',
+          { className: 'lmn-icon', style: { color: fileColor(name) }, 'aria-hidden': 'true' },
+          h(
+            'svg',
+            { viewBox: '0 0 16 16', width: 16, height: 16 },
+            h('path', {
+              d: 'M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5z',
+              fill: 'currentColor',
+              opacity: 0.16,
+            }),
+            h('path', {
+              d: 'M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5zM9.5 1.5v3h3',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.1,
+              strokeLinejoin: 'round',
+            }),
+          ),
+        )
+
+      const folderGlyph = (open) =>
+        h(
+          'span',
+          { className: 'lmn-icon', 'aria-hidden': 'true' },
+          h(
+            'svg',
+            { viewBox: '0 0 16 16', width: 16, height: 16 },
+            open
+              ? h('path', {
+                  d: 'M1.5 5.4h13l-1.5 6.4a1 1 0 0 1-1 .8H2.6a1 1 0 0 1-1-.8z',
+                  fill: 'currentColor',
+                  opacity: 0.2,
+                })
+              : null,
+            h('path', {
+              d: open
+                ? 'M1.5 5.4V3.5a.9.9 0 0 1 .9-.9h3l1.3 1.4h5.4a.9.9 0 0 1 .9.9v.5'
+                : 'M1.8 3.4a.9.9 0 0 1 .9-.9h3l1.3 1.4h5.2a.9.9 0 0 1 .9.9v7.5a.9.9 0 0 1-.9.9H2.7a.9.9 0 0 1-.9-.9z',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.1,
+              strokeLinejoin: 'round',
+            }),
+          ),
+        )
+
+      /** A compact square icon button, the way the Explorer header carries its actions. */
+      const iconButton = (kind, label, onClick) =>
+        h(
+          'button',
+          {
+            className: 'lmn-iconbtn',
+            title: label,
+            'aria-label': label,
+            disabled: busy === 'create',
+            onClick,
+          },
+          h(
+            'svg',
+            { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true' },
+            h('path', {
+              d:
+                kind === 'newFile'
+                  ? 'M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5zM9.5 1.5v3h3M8 8v4M6 10h4'
+                  : 'M1.8 3.4a.9.9 0 0 1 .9-.9h3l1.3 1.4h5.2a.9.9 0 0 1 .9.9v7.5a.9.9 0 0 1-.9.9H2.7a.9.9 0 0 1-.9-.9zM8 7.6v4M6 9.6h4',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.1,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }),
+          ),
+        )
 
       /** Children of one directory, rendered one indent step deeper. */
       const childNodes = (target, relative, depth) => {
@@ -976,7 +1094,7 @@ window.__ModuleLoader__.load({
         const finish = () => void confirmCreate()
         return h(
           'div',
-          { key: 'create', className: 'lmn-create', style: { paddingLeft: `${8 + depth * 12}px` } },
+          { key: 'create', className: 'lmn-create', style: { paddingLeft: (8 + depth * 10) + 'px' } },
           h('input', {
             autoFocus: true,
             value: creating === null ? '' : creating.value,
@@ -1013,9 +1131,9 @@ window.__ModuleLoader__.load({
         for (let level = 1; level <= depth; level += 1) {
           guides.push(
             h('span', {
-              key: `guide${level}`,
+              key: 'guide' + level,
               className: 'lmn-indent',
-              style: { left: `${8 + (level - 1) * 12 + 7}px` },
+              style: { left: (8 + (level - 1) * 10 + 6) + 'px' },
               'aria-hidden': 'true',
             }),
           )
@@ -1026,31 +1144,17 @@ window.__ModuleLoader__.load({
           'div',
           {
             className: selected ? 'lmn-row is-selected' : 'lmn-row',
-            style: { paddingLeft: `${8 + depth * 12}px` },
-            onClick: (event) => {
-              // The row itself is a click target, but a real click on the inner
-              // button must not toggle a second time through bubbling.
-              if (event?.target !== event?.currentTarget) return
-              activate()
-            },
+            style: { paddingLeft: (8 + depth * 10) + 'px' },
+            title: relative,
+            role: 'treeitem',
+            'aria-selected': selected ? 'true' : 'false',
+            'aria-expanded': isDirectory ? (open ? 'true' : 'false') : undefined,
+            onClick: activate,
           },
           guides,
           chevron(isDirectory, open),
-          h(
-            'button',
-            {
-              className: 'lmn-item',
-              title: relative,
-              'aria-selected': selected ? 'true' : 'false',
-              'aria-expanded': isDirectory ? (open ? 'true' : 'false') : undefined,
-              onClick: activate,
-            },
-            h(
-              'span',
-              { className: 'lmn-item-name' },
-              isDirectory ? `${open ? '📂' : '📁'} ${entry.name}` : entry.name,
-            ),
-          ),
+          isDirectory ? folderGlyph(open) : fileGlyph(entry.name),
+          h('span', { className: 'lmn-name' }, entry.name),
         )
         return h(
           'div',
@@ -1060,33 +1164,28 @@ window.__ModuleLoader__.load({
         )
       }
 
-      /** Top-level node: the imported folder itself, with its root path underneath. */
+      /** Top-level node: the imported folder itself, minus the redundant path line. */
       const projectNode = (item) => {
         const active = project !== null && project.id === item.id
         const open = openDirs[treeKey(item.id, '')] === true
         const row = h(
           'div',
-          { className: active ? 'lmn-row is-selected' : 'lmn-row', style: { paddingLeft: '8px' } },
+          {
+            className: active ? 'lmn-row lmn-row-root is-selected' : 'lmn-row lmn-row-root',
+            style: { paddingLeft: '8px' },
+            title: item.rootPath,
+            role: 'treeitem',
+            'aria-selected': active ? 'true' : 'false',
+            'aria-expanded': open ? 'true' : 'false',
+            onClick: () => void openProject(item),
+          },
           chevron(true, open),
+          folderGlyph(open),
+          h('span', { className: 'lmn-name lmn-name-root' }, item.name.toUpperCase()),
           h(
             'button',
             {
-              className: 'lmn-item',
-              title: item.rootPath,
-              'aria-selected': active ? 'true' : 'false',
-              onClick: () => void openProject(item),
-            },
-            h(
-              'span',
-              { className: 'lmn-item-name' },
-              h('span', { style: { display: 'block' } }, item.name),
-              h('span', { className: 'lmn-item-sub', style: { display: 'block' } }, item.rootPath),
-            ),
-          ),
-          h(
-            'button',
-            {
-              className: 'lmn-btn lmn-remove',
+              className: 'lmn-remove',
               title: t('panel.remove'),
               'aria-label': t('panel.remove'),
               onClick: (event) => {
@@ -1094,7 +1193,7 @@ window.__ModuleLoader__.load({
                 void removeProject(item)
               },
             },
-            '×',
+            'x',
           ),
         )
         return h(
@@ -1112,26 +1211,8 @@ window.__ModuleLoader__.load({
               'div',
               { className: 'lmn-actions' },
               h('span', { className: 'lmn-actions-label', title: project.rootPath }, viewTarget === '' ? t('panel.rootDir') : viewTarget),
-              h(
-                'button',
-                {
-                  className: 'lmn-btn',
-                  title: t('panel.newFile'),
-                  disabled: busy === 'create',
-                  onClick: () => beginCreate('file'),
-                },
-                `+ ${t('panel.newFile')}`,
-              ),
-              h(
-                'button',
-                {
-                  className: 'lmn-btn',
-                  title: t('panel.newFolder'),
-                  disabled: busy === 'create',
-                  onClick: () => beginCreate('directory'),
-                },
-                `+ ${t('panel.newFolder')}`,
-              ),
+              iconButton('newFile', t('panel.newFile'), () => beginCreate('file')),
+              iconButton('newFolder', t('panel.newFolder'), () => beginCreate('directory')),
             )
 
       const side = h(
@@ -1140,7 +1221,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'lmn-side-head' },
-          h('span', null, t('panel.projects')),
+          h('span', { className: 'lmn-side-title' }, t('panel.projects')),
           h(
             'button',
             {

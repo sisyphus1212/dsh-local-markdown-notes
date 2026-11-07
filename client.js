@@ -58,6 +58,7 @@ window.__ModuleLoader__.load({
       'panel.edit': '编辑',
       'panel.preview': '预览',
       'panel.untitledName': '未命名',
+      'panel.resize': '拖动调整下方面板高度',
     }
 
     const EN = {
@@ -110,6 +111,7 @@ window.__ModuleLoader__.load({
       'panel.edit': 'Edit',
       'panel.preview': 'Preview',
       'panel.untitledName': 'Untitled',
+      'panel.resize': 'Drag to resize the bottom panel',
     }
 
     const STYLE = `
@@ -146,7 +148,7 @@ window.__ModuleLoader__.load({
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
-.lmn-doc{flex:1;min-height:0;width:100%;max-width:820px;margin:0 auto;padding:0 28px;box-sizing:border-box;display:flex;flex-direction:column}
+.lmn-doc{flex:1;min-height:0;width:100%;padding:0 20px;box-sizing:border-box;display:flex;flex-direction:column}
 .lmn-editor textarea{flex:1;min-height:0;resize:none;border:0;outline:none;padding:14px 0 24px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2}
 /* The host paints a global focus ring on every focused control. Our editor
    already shows the caret, so the ring only boxes the whole page in blue. */
@@ -156,6 +158,10 @@ window.__ModuleLoader__.load({
 .lmn-code{flex:1;min-height:0;display:flex;min-width:0}
 .lmn-gutter{flex:0 0 auto;min-width:34px;overflow:hidden;padding:14px 10px 24px 0;text-align:right;color:var(--dsw-alias-label-tertiary,#81858c);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;user-select:none;-webkit-user-select:none;cursor:default}
 .lmn-gutter-line{height:20px;line-height:20px}
+/* A bare hit strip above the bottom pane. The visible rule stays on the pane
+   itself, so the splitter only has to be grabbable, not painted. */
+.lmn-splitter{flex:0 0 auto;height:6px;margin-bottom:-1px;cursor:row-resize;background:transparent;touch-action:none}
+.lmn-splitter:hover,.lmn-splitter[data-dragging="true"]{background:var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
 .lmn-bottom{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));max-height:44%;display:flex;flex-direction:column;min-height:0}
 .lmn-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-tab{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;border-radius:6px;padding:3px 8px;cursor:pointer}
@@ -971,6 +977,10 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
       const [viewTarget, setViewTarget] = React.useState('')
       const [creating, setCreating] = React.useState(null)
       const [viewMode, setViewMode] = React.useState('edit')
+      const [bottomHeight, setBottomHeight] = React.useState(null)
+      const [resizing, setResizing] = React.useState(false)
+      const bottomRef = React.useRef(null)
+      const resizeRef = React.useRef(null)
 
       const report = React.useCallback((caught) => {
         setError({ message: caught?.message ?? String(caught), code: caught?.code ?? '' })
@@ -1652,6 +1662,46 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
       // opens, so the gutter and the caret's notion of a line agree.
       const lineCount = Math.max(1, draft.split('\n').length)
 
+      // The bottom pane is content-sized until the user drags the splitter; from
+      // then on it carries an explicit height so the two halves stay put.
+      const BOTTOM_MIN = 60
+      const endResize = (event) => {
+        if (resizeRef.current === null) return
+        resizeRef.current = null
+        setResizing(false)
+        event?.currentTarget?.releasePointerCapture?.(event.pointerId)
+      }
+      const splitterProps = {
+        role: 'separator',
+        'aria-orientation': 'horizontal',
+        'aria-label': t('panel.resize'),
+        'data-dragging': resizing ? 'true' : 'false',
+        onPointerDown: (event) => {
+          const pane = bottomRef.current
+          const total = pane?.parentElement?.getBoundingClientRect?.().height ?? 0
+          if (pane === null || !(total > 0)) return
+          event.preventDefault?.()
+          // Keeping the pointer captured means the drag survives leaving the strip.
+          event.currentTarget?.setPointerCapture?.(event.pointerId)
+          resizeRef.current = {
+            startY: event.clientY,
+            startHeight: pane.getBoundingClientRect?.().height ?? 0,
+            max: Math.max(BOTTOM_MIN + 60, total - 120),
+          }
+          setResizing(true)
+        },
+        onPointerMove: (event) => {
+          const drag = resizeRef.current
+          if (drag === null) return
+          const next = drag.startHeight + (drag.startY - event.clientY)
+          setBottomHeight(Math.round(Math.min(drag.max, Math.max(BOTTOM_MIN, next))))
+        },
+        onPointerUp: endResize,
+        onPointerCancel: endResize,
+      }
+      const bottomStyle =
+        bottomHeight === null ? undefined : { height: `${bottomHeight}px`, maxHeight: 'none' }
+
       const editor =
         file === null
           ? h(
@@ -1832,9 +1882,10 @@ body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) 
             ? null
             : h('div', { className: 'lmn-error' }, `${t('panel.error')} — ${error.code || ''} ${error.message}`),
           editor,
+          h('div', { className: 'lmn-splitter', ...splitterProps }),
           h(
             'div',
-            { className: 'lmn-bottom' },
+            { className: 'lmn-bottom', ref: bottomRef, style: bottomStyle },
             h(
               'div',
               { className: 'lmn-tabs' },

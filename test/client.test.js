@@ -1929,6 +1929,70 @@ test('a fence without a language carries no badge and no colouring', async () =>
   assert.equal(textsOf(seekType(pre, 'code')), 'plain text')
 })
 
+test('the document column uses the full width instead of a fixed centred measure', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const rule = styles[0].textContent.split('\n').find((line) => line.startsWith('.lmn-doc{'))
+  assert.ok(rule, 'the document column rule exists')
+  assert.ok(rule.includes('width:100%'), `the column fills the editor: ${rule}`)
+  assert.ok(!rule.includes('max-width'), `nothing caps the column width: ${rule}`)
+  assert.ok(!rule.includes('margin:0 auto'), `the column is no longer centred: ${rule}`)
+})
+
+test('dragging the splitter resizes the bottom pane and keeps the chosen height', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+  })
+  const panel = await mountPanel({ namespace })
+
+  const splitter = () => findOne(panel.runtime.tree(), 'lmn-splitter')
+  const pane = () => findOne(panel.runtime.tree(), 'lmn-bottom')
+
+  assert.ok(splitter(), 'a splitter sits between the editor and the bottom pane')
+  assert.equal(splitter().props.role, 'separator', 'it is announced as a separator')
+  assert.equal(splitter().props['aria-label'], `${NS}:panel.resize`, 'the handle carries a label')
+  assert.equal(pane().props.style, undefined, 'the pane starts content-sized')
+
+  // The harness never attaches real nodes, so hand the pane ref the geometry the
+  // handler measures: an 800px main area with a 200px tall pane in it.
+  pane().props.ref.current = {
+    getBoundingClientRect: () => ({ height: 200 }),
+    parentElement: { getBoundingClientRect: () => ({ height: 800 }) },
+  }
+
+  splitter().props.onPointerDown({
+    clientY: 600,
+    pointerId: 1,
+    preventDefault() {},
+    currentTarget: { setPointerCapture() {} },
+  })
+  await panel.runtime.flush()
+  assert.equal(splitter().props['data-dragging'], 'true', 'the handle reports the drag')
+
+  // Dragging 150px upwards grows the pane from 200px to 350px.
+  splitter().props.onPointerMove({ clientY: 450 })
+  await panel.runtime.flush()
+  assert.equal(pane().props.style.height, '350px', 'the pane follows the pointer')
+  assert.equal(pane().props.style.maxHeight, 'none', 'the 44% cap no longer applies')
+
+  // Dragging past the top clamp stops at the minimum instead of collapsing it.
+  splitter().props.onPointerMove({ clientY: 5000 })
+  await panel.runtime.flush()
+  assert.equal(pane().props.style.height, '60px', 'the pane stops at its minimum height')
+
+  splitter().props.onPointerUp({ pointerId: 1, currentTarget: { releasePointerCapture() {} } })
+  await panel.runtime.flush()
+  assert.equal(splitter().props['data-dragging'], 'false', 'the drag ends')
+  assert.equal(pane().props.style.height, '60px', 'the chosen height stays after release')
+
+  // A pointer move with no drag in flight must not resize anything.
+  splitter().props.onPointerMove({ clientY: 100 })
+  await panel.runtime.flush()
+  assert.equal(pane().props.style.height, '60px', 'a stray move after release is ignored')
+})
+
 test('highlighted source can never become executable markup', async () => {
   const source = "const tag = '<img src=x onerror=alert(1)>'"
   const render = await previewing(['```js', source, '```', ''].join('\n'))
@@ -1941,3 +2005,4 @@ test('highlighted source can never become executable markup', async () => {
     'the highlighted preview is still built from elements',
   )
 })
+

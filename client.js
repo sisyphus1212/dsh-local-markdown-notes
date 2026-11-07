@@ -33,6 +33,7 @@ window.__ModuleLoader__.load({
       'panel.blameHint': '把光标放到某一行查看提交信息。',
       'panel.noFile': '从左侧选择一个 Markdown 文件。',
       'panel.noProject': '先导入或选择一个文件夹。',
+      'panel.pickProject': '从左侧选择一个文件夹。',
       'panel.noCommits': '仓库还没有提交，差异与 blame 暂不可用。',
       'panel.loading': '载入中…',
       'panel.error': '出错了',
@@ -72,6 +73,7 @@ window.__ModuleLoader__.load({
       'panel.blameHint': 'Put the cursor on a line to see its commit.',
       'panel.noFile': 'Pick a Markdown file on the left.',
       'panel.noProject': 'Import or select a folder first.',
+      'panel.pickProject': 'Pick a folder on the left.',
       'panel.noCommits': 'This repository has no commits yet, so diff and blame are unavailable.',
       'panel.loading': 'Loading…',
       'panel.error': 'Something went wrong',
@@ -675,8 +677,16 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 null,
-                h('h3', null, project === null ? t('panel.empty') : t('panel.noFile')),
-                h('p', null, project === null ? t('panel.emptyHint') : ''),
+                h(
+                  'h3',
+                  null,
+                  project !== null
+                    ? t('panel.noFile')
+                    : projects.length === 0
+                      ? t('panel.empty')
+                      : t('panel.pickProject'),
+                ),
+                h('p', null, project === null && projects.length === 0 ? t('panel.emptyHint') : ''),
               ),
             )
           : h(

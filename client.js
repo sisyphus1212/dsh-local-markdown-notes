@@ -804,7 +804,8 @@ window.__ModuleLoader__.load({
 
         ctx.effect(
           () =>
-            ctx.slots.inject('sidebar.panellist', () =>              ctx.slots.register(
+            ctx.slots.inject('sidebar.panellist', () =>
+              ctx.slots.register(
                 {
                   name: 'sidebar.panellist',
                   id: PANEL_ID,

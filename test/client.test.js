@@ -336,7 +336,7 @@ test('client apply registers the locale dictionary, style, remote mount and both
 
   assert.equal(record.mounts.length, 1)
   assert.equal(record.mounts[0].package, '@local/local-markdown-notes')
-  assert.equal(record.mounts[0].descriptors.length, 9)
+  assert.equal(record.mounts[0].descriptors.length, 10)
 
   assert.deepEqual([...record.injected], ['sidebar.panellist', 'main'])
   assert.equal(record.slots.length, 2)
@@ -498,6 +498,7 @@ test('every mounted descriptor uses a strict codec on parameters and result', as
       'gitStatus',
       'gitDiff',
       'gitBlame',
+      'createEntry',
     ],
   )
 
@@ -693,6 +694,19 @@ function treeNamespace(options = {}) {
     },
     async writeFile() {
       throw new Error('writeFile must not run in these tests')
+    },
+    async createEntry(projectId, relativePath, kind) {
+      calls.push(['createEntry', projectId, relativePath, kind])
+      if (options.createFails) {
+        throw Object.assign(new Error('already exists'), { code: 'notes/exists' })
+      }
+      // Creating a real entry makes the parent list one item longer.
+      const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''
+      const bucket = entriesByPath[parent]
+      if (bucket !== undefined && kind === 'file') {
+        bucket.push({ path: relativePath, name: relativePath.slice(relativePath.lastIndexOf('/') + 1), type: 'file' })
+      }
+      return { ok: true, value: { path: relativePath, kind } }
     },
     async gitStatus(projectId) {
       calls.push(['gitStatus', projectId])
@@ -926,6 +940,13 @@ test('opening the Diff tab loads a diff instead of showing a permanent empty pan
 /** Depth-first search for the first rendered node of one element type. */
 function seekType(node, type) {
   if (node === null || node === undefined) return null
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = seekType(child, type)
+      if (hit !== null) return hit
+    }
+    return null
+  }
   if (typeof node !== 'object') return null
   if (node.type === type) return node
   for (const child of node.children ?? []) {
@@ -933,6 +954,20 @@ function seekType(node, type) {
     if (hit !== null) return hit
   }
   return null
+}
+
+/** Count every rendered node of one element type, depth first. */
+function countType(node, type) {
+  if (node === null || node === undefined) return 0
+  if (Array.isArray(node)) {
+    let nested = 0
+    for (const child of node) nested += countType(child, type)
+    return nested
+  }
+  if (typeof node !== 'object') return 0
+  let total = node.type === type ? 1 : 0
+  for (const child of node.children ?? []) total += countType(child, type)
+  return total
 }
 
 /** Open the project, open the single file, and put the cursor at `offset`. */
@@ -1173,4 +1208,346 @@ test('a committed line beside an all-zero line still names its own commit', asyn
   assert.ok(findOne(panel.runtime.tree(), 'lmn-blame-card'), 'the commit card is present')
 })
 
+// ---------------------------------------------------------------------------
+// VS Code style creating: an actions row, an inline name field, and the tree
+// ---------------------------------------------------------------------------
 
+/** Drive one keystroke through a rendered element's onKeyDown handler. */
+async function press(runtime, element, key) {
+  assert.ok(element, `the element that receives ${key} exists`)
+  let prevented = false
+  element.props.onKeyDown({
+    key,
+    preventDefault() {
+      prevented = true
+    },
+    stopPropagation() {},
+  })
+  await runtime.flush()
+  return prevented
+}
+
+test('the actions row exists only beside a project and names the target folder', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [] } })
+  const panel = await mountPanel({ namespace })
+
+  assert.equal(
+    findAll(panel.runtime.tree(), 'lmn-actions').length,
+    0,
+    'no project is open yet, so there is nothing to create into',
+  )
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  const actions = findOne(panel.runtime.tree(), 'lmn-actions')
+  assert.ok(actions, 'opening the project reveals the actions row')
+  const label = findOne(actions, 'lmn-actions-label')
+  assert.equal(
+    textsOf(label),
+    `${NS}:panel.rootDir`,
+    'the row names the root directory while nothing deeper is selected',
+  )
+  const titles = findAll(actions, 'lmn-btn').map((button) => button.props.title)
+  assert.deepEqual(
+    titles,
+    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`],
+    'the row offers a new file and a new folder',
+  )
+})
+
+test('the new-file action opens an inline name field prefilled with an untitled .md name', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [] } })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  const actions = findOne(panel.runtime.tree(), 'lmn-actions')
+  await click(panel.runtime, findAll(actions, 'lmn-btn')[0])
+
+  const row = findOne(panel.runtime.tree(), 'lmn-create')
+  assert.ok(row, 'the inline field appears under the actions row')
+  const input = seekType(row, 'input')
+  assert.ok(input, 'the inline field is an input')
+  assert.equal(
+    input.props.value,
+    `${NS}:panel.untitledName.md`,
+    'the name defaults to an untitled markdown file',
+  )
+  assert.equal(
+    input.props.placeholder,
+    `${NS}:panel.namePlaceholder`,
+    'the placeholder prompts for a name',
+  )
+})
+
+test('confirming a new file at the root calls createEntry with a .md path', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: { '': [] } })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-btn')[0])
+  let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  input.props.onChange({ target: { value: 'readme' } })
+  await panel.runtime.flush()
+
+  input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  assert.equal(input.props.value, 'readme', 'the typed name is held while typing')
+
+  const prevented = await press(panel.runtime, input, 'Enter')
+  assert.ok(prevented, 'Enter is claimed by the field instead of submitting a form')
+  assert.ok(
+    calls.some(
+      (call) =>
+        call[0] === 'createEntry' && call[1] === 'p1' && call[2] === 'readme.md' && call[3] === 'file',
+    ),
+    `createEntry receives the markdown path: ${JSON.stringify(calls)}`,
+  )
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-create').length, 0, 'the field closes after creating')
+})
+
+test('creating inside a folder prefixes the selected folder and a directory keeps its name', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: {
+      '': [{ path: 'sub', name: 'sub', type: 'directory' }],
+      sub: [],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  const folderItem = findAll(panel.runtime.tree(), 'lmn-item').find((item) =>
+    textsOf(item).includes('sub'),
+  )
+  await click(panel.runtime, folderItem)
+
+  const label = findOne(panel.runtime.tree(), 'lmn-actions-label')
+  assert.equal(textsOf(label), 'sub', 'the actions row follows the opened folder')
+
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-btn')[1])
+  let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  input.props.onChange({ target: { value: 'notes' } })
+  await panel.runtime.flush()
+  input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  await press(panel.runtime, input, 'Enter')
+
+  assert.ok(
+    calls.some(
+      (call) =>
+        call[0] === 'createEntry' &&
+        call[2] === 'sub/notes' &&
+        call[3] === 'directory',
+    ),
+    `a folder inside sub keeps its plain name: ${JSON.stringify(calls)}`,
+  )
+})
+
+test('Escape cancels the inline field without creating anything', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: { '': [] } })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-btn')[0])
+  assert.ok(findOne(panel.runtime.tree(), 'lmn-create'), 'the field is open before Escape')
+
+  const input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  await press(panel.runtime, input, 'Escape')
+
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-create').length, 0, 'Escape closes the field')
+  assert.equal(
+    calls.filter((call) => call[0] === 'createEntry').length,
+    0,
+    'no entry is created when the name field is cancelled',
+  )
+})
+
+test('an empty name is cancelled instead of creating an unnamed entry', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: { '': [] } })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-actions'), 'lmn-btn')[0])
+  let input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  input.props.onChange({ target: { value: '   ' } })
+  await panel.runtime.flush()
+
+  input = seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input')
+  await press(panel.runtime, input, 'Enter')
+
+  assert.equal(
+    calls.filter((call) => call[0] === 'createEntry').length,
+    0,
+    'whitespace never reaches the Host as a file name',
+  )
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-create').length, 0, 'the field still closes')
+})
+
+test('a folder row reports its expanded state and swaps its icon', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: {
+      '': [{ path: 'sub', name: 'sub', type: 'directory' }],
+      sub: [],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+
+  const rowFor = () =>
+    findAll(panel.runtime.tree(), 'lmn-item').find((item) => textsOf(item).includes('sub'))
+
+  const closed = rowFor()
+  assert.equal(closed.props['aria-expanded'], 'false', 'a collapsed folder announces it is collapsed')
+  assert.ok(textsOf(closed).includes('📁'), 'a collapsed folder shows the closed icon')
+  assert.ok(textsOf(closed).includes('sub'), 'the folder keeps its name')
+
+  await click(panel.runtime, closed)
+
+  const open = rowFor()
+  assert.equal(open.props['aria-expanded'], 'true', 'an expanded folder announces it is expanded')
+  assert.ok(textsOf(open).includes('📂'), 'an expanded folder shows the open icon')
+
+  const file = findAll(panel.runtime.tree(), 'lmn-item').find((item) =>
+    textsOf(item).includes('deep'),
+  )
+  assert.equal(file, undefined, 'the empty folder has no children to show')
+})
+
+test('each depth level adds one indent guide line to the row', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: {
+      '': [{ path: 'sub', name: 'sub', type: 'directory' }],
+      sub: [{ path: 'sub/deep.md', name: 'deep.md', type: 'file' }],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-item').find((item) => textsOf(item).includes('sub')),
+  )
+
+  const rows = findAll(panel.runtime.tree(), 'lmn-row')
+  assert.equal(rows.length, 3, 'project row, folder row and file row')
+  assert.equal(findAll(rows[0], 'lmn-indent').length, 0, 'the project root has no guide line')
+  assert.equal(findAll(rows[1], 'lmn-indent').length, 1, 'depth 1 has one guide line')
+  assert.equal(findAll(rows[2], 'lmn-indent').length, 2, 'depth 2 has two guide lines')
+
+  const guides = findAll(rows[2], 'lmn-indent')
+  assert.deepEqual(
+    guides.map((guide) => guide.props.style.left),
+    ['15px', '27px'],
+    'the guide lines follow the same 12px step as the padding',
+  )
+})
+
+test('the preview toggle renders markdown as elements and replaces the textarea', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-item').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+
+  const markdown = [
+    '# Title',
+    '',
+    'Some **bold**, `code` and a [link](https://example.com).',
+    '',
+    '- one',
+    '- two',
+    '',
+    '| a | b |',
+    '| --- | --- |',
+    '| 1 | 2 |',
+    '',
+  ].join('\n')
+  let area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: markdown } })
+  await panel.runtime.flush()
+
+  const seg = findOne(panel.runtime.tree(), 'lmn-seg')
+  assert.ok(seg, 'the toolbar carries a view toggle')
+  const buttons = findAll(seg, 'lmn-btn')
+  assert.equal(buttons.length, 2, 'editing and preview are the only two modes')
+  assert.deepEqual(
+    buttons.map((button) => textsOf(button)),
+    [`${NS}:panel.edit`, `${NS}:panel.preview`],
+    'both modes are labelled from the dictionary',
+  )
+  assert.equal(buttons[0].props['aria-pressed'], 'true', 'editing is the default mode')
+
+  await click(panel.runtime, buttons[1])
+
+  const tree = panel.runtime.tree()
+  assert.equal(
+    seekType(findOne(tree, 'lmn-editor'), 'textarea'),
+    null,
+    'preview hides the textarea',
+  )
+  const render = findOne(tree, 'lmn-render')
+  assert.ok(render, 'preview renders the markdown into a body')
+  assert.equal(countType(render, 'h1'), 1, 'an ATX heading becomes an h1')
+  assert.equal(textsOf(seekType(render, 'h1')), 'Title')
+  assert.equal(countType(render, 'strong'), 1, 'bold text becomes strong')
+  assert.equal(countType(render, 'code'), 1, 'inline code becomes a code element')
+  const link = seekType(render, 'a')
+  assert.ok(link, 'a link becomes an anchor')
+  assert.equal(link.props.href, 'https://example.com')
+  assert.equal(link.props.rel, 'noreferrer', 'an external link cannot reach window.opener')
+  assert.equal(countType(render, 'li'), 2, 'bullets become list items')
+  const table = seekType(render, 'table')
+  assert.ok(table, 'a GFM table becomes a table element')
+  assert.equal(countType(table, 'th'), 2, 'the header row keeps both cells')
+  assert.equal(countType(table, 'td'), 2, 'the body row keeps both cells')
+  assert.ok(
+    !JSON.stringify(render).includes('dangerouslySetInnerHTML'),
+    'the renderer never injects raw HTML',
+  )
+})
+
+test('switching to preview and back leaves the draft untouched', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-item').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+
+  const typed = '# 草稿\n\n正文 **加粗**\n'
+  let area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: typed } })
+  await panel.runtime.flush()
+
+  const toggle = () => findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')
+  await click(panel.runtime, toggle()[1])
+  assert.ok(findOne(panel.runtime.tree(), 'lmn-render'), 'preview is showing')
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-render-empty').length, 0, 'the draft is not empty')
+
+  await click(panel.runtime, toggle()[0])
+  area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  assert.ok(area, 'going back restores the textarea')
+  assert.equal(area.props.value, typed, 'the draft survived both switches unchanged')
+})
+
+test('an empty draft previews as a placeholder rather than an empty body', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-item').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: '' } })
+  await panel.runtime.flush()
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1])
+
+  const empty = findOne(panel.runtime.tree(), 'lmn-render-empty')
+  assert.ok(empty, 'an empty draft shows the placeholder')
+  assert.equal(textsOf(empty), `${NS}:panel.previewEmpty`)
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-render').length, 0, 'no empty body is rendered')
+})

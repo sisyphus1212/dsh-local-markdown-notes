@@ -16,6 +16,7 @@ window.__ModuleLoader__.load({
       'panel.emptyHint': '导入一个本机文件夹，里面放 Markdown 文件即可。第一次导入会在该文件夹内初始化 Git 仓库。',
       'panel.projects': '文件夹',
       'panel.files': '文件',
+      'panel.emptyDir': '这个文件夹是空的。',
       'panel.save': '保存',
       'panel.saving': '保存中…',
       'panel.saved': '已保存',
@@ -54,6 +55,7 @@ window.__ModuleLoader__.load({
       'panel.emptyHint': 'Import a local folder holding Markdown files. The first import initialises a Git repository inside that folder.',
       'panel.projects': 'Folders',
       'panel.files': 'Files',
+      'panel.emptyDir': 'This folder is empty.',
       'panel.save': 'Save',
       'panel.saving': 'Saving…',
       'panel.saved': 'Saved',
@@ -99,6 +101,16 @@ window.__ModuleLoader__.load({
 .lmn-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}
 .lmn-item[aria-selected="true"]{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.08))}
 .lmn-item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.lmn-tree{display:flex;flex-direction:column;gap:1px}
+.lmn-node{display:block;min-width:0}
+.lmn-row{display:flex;align-items:center;gap:2px;min-width:0;border-radius:6px}
+.lmn-row:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}
+.lmn-row.is-selected{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.08))}
+.lmn-row .lmn-item{flex:1;min-width:0;border-radius:6px;padding:4px 6px}
+.lmn-row .lmn-item:hover,.lmn-row .lmn-item[aria-selected="true"]{background:none}
+.lmn-chevron,.lmn-chevron-spacer{flex:0 0 14px;width:14px;text-align:center;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,#81858c)}
+.lmn-remove{opacity:0;transition:opacity .12s;padding:1px 6px;background:none;border-color:transparent}
+.lmn-row:hover .lmn-remove,.lmn-remove:focus-visible{opacity:1}
 .lmn-item-sub{color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
@@ -294,43 +306,16 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function SidebarItem({ project, active, onSelect, onRemove, t }) {
-      return h(
-        'div',
-        { style: { display: 'flex', alignItems: 'center', gap: '4px' } },
-        h(
-          'button',
-          {
-            className: 'lmn-item',
-            'aria-selected': active ? 'true' : 'false',
-            title: project.rootPath,
-            onClick: () => onSelect(project),
-          },
-          h(
-            'span',
-            { className: 'lmn-item-name' },
-            h('span', { style: { display: 'block' } }, project.name),
-            h('span', { className: 'lmn-item-sub', style: { display: 'block' } }, project.rootPath),
-          ),
-        ),
-        h(
-          'button',
-          {
-            className: 'lmn-btn',
-            title: t('panel.remove'),
-            'aria-label': t('panel.remove'),
-            onClick: () => onRemove(project),
-          },
-          '×',
-        ),
-      )
+    /** Cache key for one tree node: a directory is identified by project + path. */
+    function treeKey(projectId, relativePath) {
+      return `${projectId}:${relativePath ?? ''}`
     }
 
     function App({ api, t }) {
       const [projects, setProjects] = React.useState([])
       const [project, setProject] = React.useState(null)
-      const [folder, setFolder] = React.useState('')
-      const [entries, setEntries] = React.useState([])
+      const [openDirs, setOpenDirs] = React.useState({})
+      const [children, setChildren] = React.useState({})
       const [file, setFile] = React.useState(null)
       const [draft, setDraft] = React.useState('')
       const [status, setStatus] = React.useState(null)
@@ -357,19 +342,36 @@ window.__ModuleLoader__.load({
         }
       }, [api, report])
 
-      const refreshEntries = React.useCallback(
+      const loadPath = React.useCallback(
         async (target, relative) => {
-          if (target === null) return
+          if (target === null) return null
           try {
             const value = await api.listEntries(target.id, relative ?? '')
-            setEntries(Array.isArray(value?.entries) ? value.entries : [])
-            setFolder(value?.path ?? '')
+            const entries = Array.isArray(value?.entries) ? value.entries : []
+            setChildren((current) => ({ ...current, [treeKey(target.id, relative ?? '')]: entries }))
             setError(null)
+            return entries
           } catch (caught) {
             report(caught)
+            return null
           }
         },
         [api, report],
+      )
+
+      const toggleDir = React.useCallback(
+        async (target, relative) => {
+          if (target === null) return
+          const key = treeKey(target.id, relative)
+          if (openDirs[key] === true) {
+            setOpenDirs((current) => ({ ...current, [key]: false }))
+            return
+          }
+          setOpenDirs((current) => ({ ...current, [key]: true }))
+          // Lazy: only the first expand of a directory hits the Host.
+          if (children[key] === undefined) await loadPath(target, relative)
+        },
+        [children, loadPath, openDirs],
       )
 
       const refreshStatus = React.useCallback(
@@ -402,10 +404,13 @@ window.__ModuleLoader__.load({
           setDiff(null)
           setDiffPath(null)
           setNotice(null)
-          await refreshEntries(target, '')
+          // Expanding the root is what makes the tree show anything: the root
+          // node is the project itself, so '' is its directory.
+          setOpenDirs((current) => ({ ...current, [treeKey(target.id, '')]: true }))
+          await loadPath(target, '')
           await refreshStatus(target)
         },
-        [refreshEntries, refreshStatus],
+        [loadPath, refreshStatus],
       )
 
       const openFile = React.useCallback(
@@ -469,9 +474,19 @@ window.__ModuleLoader__.load({
             await api.removeProject(target.id)
             if (project !== null && project.id === target.id) {
               setProject(null)
-              setEntries([])
+              // Drop every cached directory of the removed project.
+              const prefix = `${target.id}:`
+              setChildren((current) =>
+                Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(prefix))),
+              )
+              setOpenDirs((current) =>
+                Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(prefix))),
+              )
               setFile(null)
               setDraft('')
+              setBlame(null)
+              setDiff(null)
+              setDiffPath(null)
               setStatus(null)
             }
             await refreshProjects()
@@ -520,7 +535,10 @@ window.__ModuleLoader__.load({
               setError(null)
             } catch (caught) {
               if (seq !== blameSeq.current) return
+              // A repository without commits still answers, so the Blame tab must
+              // open and explain itself instead of leaving the previous tab frozen.
               setBlame({ line, entries: [], note: caught?.code ?? 'notes/git-failed' })
+              setTab('blame')
             }
           }, 180)
         },
@@ -528,6 +546,100 @@ window.__ModuleLoader__.load({
       )
 
       const dirty = file !== null && draft !== (file.content ?? draft) && busy !== 'save'
+
+      /** Chevron gutter: folders get an arrow, files keep the width with a spacer. */
+      const chevron = (isDirectory, open) =>
+        isDirectory
+          ? h('span', { className: 'lmn-chevron', 'aria-hidden': 'true' }, open ? '▾' : '▸')
+          : h('span', { className: 'lmn-chevron-spacer', 'aria-hidden': 'true' })
+
+      /** Children of one directory, rendered one indent step deeper. */
+      const childNodes = (target, relative, depth) => {
+        const key = treeKey(target.id, relative)
+        const known = children[key]
+        if (known === undefined) return [h('div', { key: `${key}:loading`, className: 'lmn-note' }, t('panel.loading'))]
+        if (known.length === 0) return [h('div', { key: `${key}:empty`, className: 'lmn-note' }, t('panel.emptyDir'))]
+        return known.map((entry) => treeNode(target, entry, depth))
+      }
+
+      /** One file or folder inside a project, expanded in place. */
+      const treeNode = (target, entry, depth) => {
+        const relative = entry.path
+        const isDirectory = entry.type === 'directory'
+        const open = isDirectory && openDirs[treeKey(target.id, relative)] === true
+        const selected = !isDirectory && file !== null && file.path === relative
+        const row = h(
+          'div',
+          { className: selected ? 'lmn-row is-selected' : 'lmn-row', style: { paddingLeft: `${8 + depth * 12}px` } },
+          chevron(isDirectory, open),
+          h(
+            'button',
+            {
+              className: 'lmn-item',
+              title: relative,
+              'aria-selected': selected ? 'true' : 'false',
+              onClick: () =>
+                isDirectory ? void toggleDir(target, relative) : void openFile(target, relative),
+            },
+            h(
+              'span',
+              { className: 'lmn-item-name' },
+              isDirectory ? `📁 ${entry.name}` : entry.name,
+            ),
+          ),
+        )
+        return h(
+          'div',
+          { key: relative, className: 'lmn-node' },
+          row,
+          open ? childNodes(target, relative, depth + 1) : null,
+        )
+      }
+
+      /** Top-level node: the imported folder itself, with its root path underneath. */
+      const projectNode = (item) => {
+        const active = project !== null && project.id === item.id
+        const open = openDirs[treeKey(item.id, '')] === true
+        const row = h(
+          'div',
+          { className: active ? 'lmn-row is-selected' : 'lmn-row', style: { paddingLeft: '8px' } },
+          chevron(true, open),
+          h(
+            'button',
+            {
+              className: 'lmn-item',
+              title: item.rootPath,
+              'aria-selected': active ? 'true' : 'false',
+              onClick: () => void openProject(item),
+            },
+            h(
+              'span',
+              { className: 'lmn-item-name' },
+              h('span', { style: { display: 'block' } }, item.name),
+              h('span', { className: 'lmn-item-sub', style: { display: 'block' } }, item.rootPath),
+            ),
+          ),
+          h(
+            'button',
+            {
+              className: 'lmn-btn lmn-remove',
+              title: t('panel.remove'),
+              'aria-label': t('panel.remove'),
+              onClick: (event) => {
+                event.stopPropagation()
+                void removeProject(item)
+              },
+            },
+            '×',
+          ),
+        )
+        return h(
+          'div',
+          { key: item.id, className: 'lmn-node' },
+          row,
+          open ? childNodes(item, '', 1) : null,
+        )
+      }
 
       const side = h(
         'aside',
@@ -548,61 +660,10 @@ window.__ModuleLoader__.load({
         ),
         h(
           'div',
-          { className: 'lmn-list' },
+          { className: 'lmn-list lmn-tree' },
           projects.length === 0
             ? h('div', { className: 'lmn-note' }, t('panel.empty'))
-            : projects.map((item) =>
-                h(SidebarItem, {
-                  key: item.id,
-                  project: item,
-                  active: project !== null && project.id === item.id,
-                  onSelect: (target) => void openProject(target),
-                  onRemove: (target) => void removeProject(target),
-                  t,
-                }),
-              ),
-          project !== null
-            ? h(
-                'div',
-                { style: { marginTop: '10px' } },
-                h(
-                  'div',
-                  { className: 'lmn-side-head', style: { borderTop: 'none', paddingTop: '6px' } },
-                  h('span', null, t('panel.files')),
-                ),
-                h(
-                  'button',
-                  {
-                    className: 'lmn-item',
-                    onClick: () => void refreshEntries(project, parentOf(folder)),
-                    disabled: folder === '',
-                    style: { opacity: folder === '' ? 0.5 : 1 },
-                  },
-                  h('span', { className: 'lmn-item-name' }, '..'),
-                ),
-                entries.length === 0
-                  ? h('div', { className: 'lmn-note' }, t('panel.empty'))
-                  : entries.map((entry) =>
-                      h(
-                        'button',
-                        {
-                          key: entry.path,
-                          className: 'lmn-item',
-                          'aria-selected': file !== null && file.path === entry.path ? 'true' : 'false',
-                          onClick: () =>
-                            entry.type === 'directory'
-                              ? void refreshEntries(project, entry.path)
-                              : void openFile(project, entry.path),
-                        },
-                        h(
-                          'span',
-                          { className: 'lmn-item-name' },
-                          entry.type === 'directory' ? `📁 ${entry.name}` : entry.name,
-                        ),
-                      ),
-                    ),
-              )
-            : null,
+            : projects.map((item) => projectNode(item)),
         ),
       )
 
@@ -747,7 +808,14 @@ window.__ModuleLoader__.load({
                     key,
                     className: 'lmn-tab',
                     'aria-selected': tab === key ? 'true' : 'false',
-                    onClick: () => setTab(key),
+                    onClick: () => {
+                      setTab(key)
+                      // Opening Diff with nothing loaded yet would show an empty pane
+                      // forever; fetch once so the tab can explain itself.
+                      if (key === 'diff' && diff === null && project !== null) {
+                        void loadDiff(project, file?.path ?? '')
+                      }
+                    },
                   },
                   key === 'status' ? t('panel.git') : key === 'diff' ? t('panel.diff') : t('panel.blame'),
                 ),
@@ -757,12 +825,6 @@ window.__ModuleLoader__.load({
           ),
         ),
       )
-    }
-
-    function parentOf(relative) {
-      if (relative === '') return ''
-      const index = relative.lastIndexOf('/')
-      return index === -1 ? '' : relative.slice(0, index)
     }
 
     return {

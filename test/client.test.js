@@ -1742,3 +1742,121 @@ test('an empty draft previews as a placeholder rather than an empty body', async
   assert.equal(textsOf(empty), `${NS}:panel.previewEmpty`)
   assert.equal(findAll(panel.runtime.tree(), 'lmn-render').length, 0, 'no empty body is rendered')
 })
+
+// ---------------------------------------------------------------------------
+// Line numbers: the editing view numbers its lines, the preview never does
+// ---------------------------------------------------------------------------
+
+/** Open 常用命令.md and hand back the textarea beside its gutter. */
+async function openWithGutter(panel) {
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+  const code = findOne(panel.runtime.tree(), 'lmn-code')
+  assert.ok(code, 'the editing view groups the gutter and the text together')
+  const gutter = findOne(code, 'lmn-gutter')
+  assert.ok(gutter, 'the editing view carries a line-number gutter')
+  return { code, gutter, area: seekType(code, 'textarea') }
+}
+
+test('the editing view numbers every line of the draft', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { gutter, area } = await openWithGutter(panel)
+
+  // The fixture file is "one\ntwo\nthree\n": three lines of text plus the empty
+  // line the trailing newline opens, which VS Code numbers as well.
+  assert.deepEqual(
+    findAll(gutter, 'lmn-gutter-line').map((line) => textsOf(line)),
+    ['1', '2', '3', '4'],
+    'the gutter numbers the loaded file',
+  )
+
+  area.props.onChange({ target: { value: 'a\nb' } })
+  await panel.runtime.flush()
+  assert.deepEqual(
+    findAll(findOne(panel.runtime.tree(), 'lmn-gutter'), 'lmn-gutter-line').map((line) => textsOf(line)),
+    ['1', '2'],
+    'the gutter follows the draft as it shrinks',
+  )
+
+  seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea').props.onChange({
+    target: { value: 'a\nb\nc\nd\ne' },
+  })
+  await panel.runtime.flush()
+  assert.deepEqual(
+    findAll(findOne(panel.runtime.tree(), 'lmn-gutter'), 'lmn-gutter-line').map((line) => textsOf(line)),
+    ['1', '2', '3', '4', '5'],
+    'the gutter follows the draft as it grows',
+  )
+})
+
+test('the gutter keeps its numbers out of the accessible name of the text', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { gutter, area } = await openWithGutter(panel)
+
+  assert.equal(gutter.props['aria-hidden'], 'true', 'a screen reader reads the text, not the numbers')
+  assert.equal(area.props['aria-label'], '常用命令.md', 'the textarea still names its file')
+  assert.equal(
+    seekType(findOne(panel.runtime.tree(), 'lmn-doc'), 'textarea').props.value,
+    'one\ntwo\nthree\n',
+    'the numbers never leak into the editable value',
+  )
+})
+
+test('scrolling the text carries the gutter with it', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { code, gutter, area } = await openWithGutter(panel)
+
+  // The harness never attaches refs to real nodes, so hand the two ref objects
+  // the scrollable stand-ins the handler touches.
+  const areaNode = { scrollTop: 140 }
+  const gutterNode = { scrollTop: 0 }
+  assert.equal(typeof area.props.onScroll, 'function', 'the text reports its scroll offset')
+  area.props.ref.current = areaNode
+  gutter.props.ref.current = gutterNode
+  area.props.onScroll()
+
+  assert.equal(gutterNode.scrollTop, 140, 'the gutter scrolls in step with the text')
+  assert.ok(code, 'the two live in one row, so the text keeps the full height')
+})
+
+test('the preview shows no line numbers', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { area } = await openWithGutter(panel)
+  area.props.onChange({ target: { value: '# Title\n\nbody\n' } })
+  await panel.runtime.flush()
+
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1])
+
+  const tree = panel.runtime.tree()
+  assert.ok(findOne(tree, 'lmn-render'), 'the preview body is showing')
+  assert.equal(findOne(tree, 'lmn-gutter'), undefined, 'rendered markdown has no source lines to number')
+  assert.equal(findOne(tree, 'lmn-code'), undefined, 'the editing row is gone entirely')
+})
+
+test('the uncommitted chip is anchored to the cursor line', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+  })
+  const panel = await mountPanel({ namespace })
+
+  // Offset 5 sits on line 2 of "one\ntwo\nthree\n".
+  await openFileAt(panel, 5)
+
+  const bar = findOne(panel.runtime.tree(), 'lmn-blame-bar')
+  assert.ok(bar, 'the blame bar renders for the cursor line')
+  const anchor = findOne(bar, 'lmn-blame-line')
+  assert.ok(anchor, 'the bar names the line it describes')
+  assert.equal(textsOf(anchor), 'L2', 'the anchor matches the cursor line')
+  assert.equal(
+    textsOf(findOne(bar, 'lmn-blame-chip')),
+    `${NS}:panel.uncommitted`,
+    'the chip itself still says only what the state is',
+  )
+})

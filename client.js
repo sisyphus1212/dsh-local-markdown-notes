@@ -153,6 +153,11 @@ window.__ModuleLoader__.load({
 /* The host paints a global focus ring on every focused control. Our editor
    already shows the caret, so the ring only boxes the whole page in blue. */
 .lmn-root .lmn-editor textarea:focus,.lmn-root .lmn-editor textarea:focus-visible{outline:none}
+/* Editing shows line numbers; the preview deliberately does not, because
+   rendered Markdown has no source lines to point at. */
+.lmn-code{flex:1;min-height:0;display:flex;min-width:0}
+.lmn-gutter{flex:0 0 auto;min-width:34px;overflow:hidden;padding:14px 10px 24px 0;text-align:right;color:var(--dsw-alias-label-tertiary,#81858c);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;user-select:none;-webkit-user-select:none;cursor:default}
+.lmn-gutter-line{height:20px;line-height:20px}
 .lmn-bottom{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));max-height:44%;display:flex;flex-direction:column;min-height:0}
 .lmn-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-tab{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;border-radius:6px;padding:3px 8px;cursor:pointer}
@@ -168,7 +173,8 @@ window.__ModuleLoader__.load({
 .lmn-empty-center h3{margin:0 0 6px;font-size:14px;color:var(--dsw-alias-label-primary,CanvasText)}
 .lmn-kv{display:flex;gap:6px}
 .lmn-kv b{font-weight:600}
-.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:10px 0 0;min-width:0}
+.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:10px 0 0 44px;min-width:0}
+.lmn-blame-line{color:var(--dsw-alias-label-tertiary,#81858c);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px}
 .lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;min-width:0;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;outline:none;cursor:default}
 .lmn-blame-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-blame-chip:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
@@ -184,7 +190,7 @@ window.__ModuleLoader__.load({
 .lmn-seg button{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;padding:3px 10px;cursor:pointer}
 .lmn-seg button[aria-pressed="true"]{color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
 .lmn-seg button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
-.lmn-render{flex:1;min-height:0;overflow:auto;padding:14px 0 24px;color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:20px;word-break:break-word}
+.lmn-render{flex:1;min-height:0;overflow:auto;padding:14px 0 24px 44px;color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:20px;word-break:break-word}
 .lmn-render>*:first-child{margin-top:0}
 .lmn-render h1,.lmn-render h2,.lmn-render h3,.lmn-render h4,.lmn-render h5,.lmn-render h6{margin:16px 0 8px;line-height:1.3;font-weight:600}
 .lmn-render h1{font-size:22px}
@@ -206,7 +212,7 @@ window.__ModuleLoader__.load({
 .lmn-render table{margin:10px 0;border-collapse:collapse;font-size:12px}
 .lmn-render th,.lmn-render td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;text-align:left;vertical-align:top}
 .lmn-render th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));font-weight:600}
-.lmn-render-empty{padding:14px 0;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
+.lmn-render-empty{padding:14px 0 14px 44px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
 `
 
     /**
@@ -934,6 +940,17 @@ window.__ModuleLoader__.load({
 
       const blameTimer = React.useRef(null)
       const blameSeq = React.useRef(0)
+      // The gutter is a sibling of the textarea, so it can only follow the text
+      // by copying the scroll offset on every scroll event.
+      const codeAreaRef = React.useRef(null)
+      const gutterRef = React.useRef(null)
+
+      const syncGutterScroll = React.useCallback(() => {
+        const area = codeAreaRef.current
+        const gutter = gutterRef.current
+        if (area === null || gutter === null) return
+        gutter.scrollTop = area.scrollTop
+      }, [])
 
       const onSelectLine = React.useCallback(
         (event) => {
@@ -1298,6 +1315,9 @@ window.__ModuleLoader__.load({
           : h(
               'div',
               { className: 'lmn-blame-bar' },
+              // The uncommitted placeholder names no line on its own, which reads
+              // as a stray label; anchor it to the cursor like the commit chip.
+              lineEntry === null ? h('span', { className: 'lmn-blame-line' }, `L${cursorLine}`) : null,
               lineEntry === null
                 ? h(
                     'div',
@@ -1333,6 +1353,10 @@ window.__ModuleLoader__.load({
                   ),
             )
 
+      // VS Code numbers every line, including the empty one a trailing newline
+      // opens, so the gutter and the caret's notion of a line agree.
+      const lineCount = Math.max(1, draft.split('\n').length)
+
       const editor =
         file === null
           ? h(
@@ -1364,17 +1388,30 @@ window.__ModuleLoader__.load({
                   ? draft === ''
                     ? h('div', { className: 'lmn-render-empty' }, t('panel.previewEmpty'))
                     : h('div', { className: 'lmn-render' }, renderMarkdown(draft))
-                  : h('textarea', {
-                      value: draft,
-                      spellCheck: false,
-                      onChange: (event) => {
-                        setDraft(event.target.value)
-                        setNotice(null)
-                      },
-                      onKeyUp: (event) => void onSelectLine(event),
-                      onClick: (event) => void onSelectLine(event),
-                      'aria-label': file.path,
-                    }),
+                  : h(
+                      'div',
+                      { className: 'lmn-code' },
+                      h(
+                        'div',
+                        { className: 'lmn-gutter', 'aria-hidden': 'true', ref: gutterRef },
+                        Array.from({ length: lineCount }, (_, index) =>
+                          h('div', { key: index, className: 'lmn-gutter-line' }, String(index + 1)),
+                        ),
+                      ),
+                      h('textarea', {
+                        value: draft,
+                        ref: codeAreaRef,
+                        spellCheck: false,
+                        onChange: (event) => {
+                          setDraft(event.target.value)
+                          setNotice(null)
+                        },
+                        onScroll: syncGutterScroll,
+                        onKeyUp: (event) => void onSelectLine(event),
+                        onClick: (event) => void onSelectLine(event),
+                        'aria-label': file.path,
+                      }),
+                    ),
               ),
             )
 

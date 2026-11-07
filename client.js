@@ -129,7 +129,7 @@ window.__ModuleLoader__.load({
 .lmn-tree{display:flex;flex-direction:column;padding:0 0 6px}
 .lmn-node{display:block;min-width:0}
 .lmn-row{position:relative;display:flex;align-items:center;gap:3px;height:22px;padding-right:4px;cursor:pointer;user-select:none;border-radius:3px}
-.lmn-row:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.045))}
+.lmn-row:hover{background:rgba(127,127,127,.18)}
 .lmn-row.is-selected{background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
 .lmn-chevron{flex:0 0 16px;width:16px;height:16px;display:grid;place-items:center;color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-icon{flex:0 0 16px;width:16px;height:16px;display:grid;place-items:center;color:var(--dsw-alias-label-secondary,#61666b)}

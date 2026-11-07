@@ -46,6 +46,11 @@ window.__ModuleLoader__.load({
       'panel.ignored': '已忽略',
       'panel.unmodified': '未改动',
       'panel.modifiedDirty': '有未保存改动',
+      'panel.uncommitted': '未提交',
+      'panel.blameAuthor': '作者',
+      'panel.blameDate': '日期',
+      'panel.blameCommit': '提交',
+      'panel.blameSummary': '说明',
     }
 
     const EN = {
@@ -86,6 +91,11 @@ window.__ModuleLoader__.load({
       'panel.ignored': 'Ignored',
       'panel.unmodified': 'Unchanged',
       'panel.modifiedDirty': 'Unsaved changes',
+      'panel.uncommitted': 'Uncommitted',
+      'panel.blameAuthor': 'Author',
+      'panel.blameDate': 'Date',
+      'panel.blameCommit': 'Commit',
+      'panel.blameSummary': 'Summary',
     }
 
     const STYLE = `
@@ -117,7 +127,7 @@ window.__ModuleLoader__.load({
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.lmn-editor{flex:1;min-height:0;display:flex}
+.lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column}
 .lmn-editor textarea{flex:1;min-height:0;resize:none;border:0;outline:none;padding:12px 14px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;tab-size:2}
 .lmn-bottom{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));max-height:44%;display:flex;flex-direction:column;min-height:0}
 .lmn-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
@@ -134,6 +144,13 @@ window.__ModuleLoader__.load({
 .lmn-empty-center h3{margin:0 0 6px;font-size:14px;color:var(--dsw-alias-label-primary,CanvasText)}
 .lmn-kv{display:flex;gap:6px}
 .lmn-kv b{font-weight:600}
+.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 12px 0;min-width:0}
+.lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none;cursor:default}
+.lmn-blame-chip:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
+.lmn-blame-chip.is-uncommitted{color:var(--dsw-alias-label-tertiary,#81858c);font-style:italic}
+.lmn-blame-card{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;min-width:240px;max-width:360px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));box-shadow:0 6px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary,CanvasText);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;text-align:left;cursor:auto}
+.lmn-blame-chip:hover .lmn-blame-card,.lmn-blame-chip:focus-within .lmn-blame-card{display:block}
+.lmn-blame-card b{font-weight:600;color:var(--dsw-alias-label-secondary,#61666b);margin-right:4px}
 `
 
     /**
@@ -313,6 +330,27 @@ window.__ModuleLoader__.load({
       return `${projectId}:${relativePath ?? ''}`
     }
 
+    /**
+     * Pick the blame entry that describes the cursor's line, for the inline chip.
+     *
+     * `git blame -L n,n` answers with whatever line range it resolved to, so the
+     * entry's own `finalLine` (or `line`) is the authority; the requested line is
+     * only a fallback when the answer does not name one.
+     */
+    function pickLineEntry(value, line) {
+      const entries = Array.isArray(value?.entries) ? value.entries : []
+      if (entries.length === 0) return null
+      const matching = entries.find((entry) => (entry.finalLine ?? entry.line) === line)
+      return matching ?? entries[0] ?? null
+    }
+
+    /** The `YYYY-MM-DD` day of a blame author time, which git reports in seconds. */
+    function blameDay(authorTime) {
+      if (authorTime === undefined || authorTime === null) return ''
+      const millis = Number(authorTime) * 1000
+      return Number.isFinite(millis) ? new Date(millis).toISOString().slice(0, 10) : ''
+    }
+
     function App({ api, t }) {
       const [projects, setProjects] = React.useState([])
       const [project, setProject] = React.useState(null)
@@ -328,6 +366,8 @@ window.__ModuleLoader__.load({
       const [diff, setDiff] = React.useState(null)
       const [diffPath, setDiffPath] = React.useState(null)
       const [blame, setBlame] = React.useState(null)
+      const [cursorLine, setCursorLine] = React.useState(null)
+      const [lineEntry, setLineEntry] = React.useState(null)
 
       const report = React.useCallback((caught) => {
         setError({ message: caught?.message ?? String(caught), code: caught?.code ?? '' })
@@ -403,6 +443,8 @@ window.__ModuleLoader__.load({
           setFile(null)
           setDraft('')
           setBlame(null)
+          setCursorLine(null)
+          setLineEntry(null)
           setDiff(null)
           setDiffPath(null)
           setNotice(null)
@@ -423,6 +465,8 @@ window.__ModuleLoader__.load({
             setFile({ path: value.path, version: value.version, content: value.content })
             setDraft(value.content)
             setBlame(null)
+            setCursorLine(null)
+            setLineEntry(null)
             setNotice(null)
             setError(null)
           } catch (caught) {
@@ -487,6 +531,8 @@ window.__ModuleLoader__.load({
               setFile(null)
               setDraft('')
               setBlame(null)
+              setCursorLine(null)
+              setLineEntry(null)
               setDiff(null)
               setDiffPath(null)
               setStatus(null)
@@ -525,6 +571,7 @@ window.__ModuleLoader__.load({
           if (project === null || file === null) return
           const position = event.currentTarget.selectionStart ?? 0
           const line = draft.slice(0, position).split('\n').length
+          setCursorLine(line)
           if (blameTimer.current !== null) window.clearTimeout(blameTimer.current)
           const seq = (blameSeq.current += 1)
           blameTimer.current = window.setTimeout(async () => {
@@ -533,6 +580,7 @@ window.__ModuleLoader__.load({
               const value = await api.gitBlame(project.id, file.path, line)
               if (seq !== blameSeq.current) return
               setBlame(value)
+              setLineEntry(pickLineEntry(value, line))
               setTab('blame')
               setError(null)
             } catch (caught) {
@@ -540,6 +588,7 @@ window.__ModuleLoader__.load({
               // A repository without commits still answers, so the Blame tab must
               // open and explain itself instead of leaving the previous tab frozen.
               setBlame({ line, entries: [], note: caught?.code ?? 'notes/git-failed' })
+              setLineEntry(null)
               setTab('blame')
             }
           }, 180)
@@ -669,6 +718,47 @@ window.__ModuleLoader__.load({
         ),
       )
 
+      /**
+       * The GitLens-style chip above the editor: the commit that last touched the
+       * cursor's line, with the full commit card revealed by CSS on hover or focus.
+       */
+      const blameBar =
+        cursorLine === null
+          ? null
+          : h(
+              'div',
+              { className: 'lmn-blame-bar' },
+              lineEntry === null
+                ? h(
+                    'div',
+                    { className: 'lmn-blame-chip is-uncommitted', tabIndex: 0 },
+                    t('panel.uncommitted'),
+                  )
+                : h(
+                    'div',
+                    { className: 'lmn-blame-chip', tabIndex: 0 },
+                    `L${lineEntry.finalLine ?? lineEntry.line} · ${String(lineEntry.sha ?? '').slice(0, 9)} · ${lineEntry.author ?? '?'} · ${blameDay(lineEntry.authorTime)}`,
+                    h(
+                      'div',
+                      { className: 'lmn-blame-card' },
+                      h('div', null, h('b', null, t('panel.blameAuthor')), lineEntry.author ?? '?'),
+                      h(
+                        'div',
+                        null,
+                        h('b', null, t('panel.blameDate')),
+                        blameDay(lineEntry.authorTime) || '?',
+                      ),
+                      h(
+                        'div',
+                        null,
+                        h('b', null, t('panel.blameCommit')),
+                        String(lineEntry.sha ?? ''),
+                      ),
+                      h('div', null, h('b', null, t('panel.blameSummary')), lineEntry.summary ?? ''),
+                    ),
+                  ),
+            )
+
       const editor =
         file === null
           ? h(
@@ -692,6 +782,7 @@ window.__ModuleLoader__.load({
           : h(
               'div',
               { className: 'lmn-editor' },
+              blameBar,
               h('textarea', {
                 value: draft,
                 spellCheck: false,

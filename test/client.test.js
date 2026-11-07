@@ -674,7 +674,7 @@ const PROJECT = { id: 'p1', name: 'ovs学习', rootPath: 'D:\dpu 资料\ovs学�
  * of one folder and the Git panes without a Host.
  */
 function treeNamespace(options = {}) {
-  const { entriesByPath = {}, blameFails = false, diff } = options
+  const { entriesByPath = {}, blameFails = false, blameEntries = [], diff } = options
   const calls = []
   const namespace = {
     async listProjects() {
@@ -707,7 +707,7 @@ function treeNamespace(options = {}) {
       if (blameFails) {
         throw Object.assign(new Error('no such ref: HEAD'), { code: 'notes/no-commits' })
       }
-      return { ok: true, value: { line, entries: [] } }
+      return { ok: true, value: { line, entries: blameEntries } }
     },
     async removeProject() {
       return { ok: true, value: { removed: true } }
@@ -917,5 +917,159 @@ test('opening the Diff tab loads a diff instead of showing a permanent empty pan
     before,
     're-opening the Diff tab does not request again',
   )
+})
+
+// ---------------------------------------------------------------------------
+// The cursor line's commit is shown next to the editor, not only in the tab
+// ---------------------------------------------------------------------------
+
+/** Depth-first search for the first rendered node of one element type. */
+function seekType(node, type) {
+  if (node === null || node === undefined) return null
+  if (typeof node !== 'object') return null
+  if (node.type === type) return node
+  for (const child of node.children ?? []) {
+    const hit = seekType(child, type)
+    if (hit !== null) return hit
+  }
+  return null
+}
+
+/** Open the project, open the single file, and put the cursor at `offset`. */
+async function openFileAt(panel, offset) {
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-item')[0])
+  const fileItem = findAll(panel.runtime.tree(), 'lmn-item').find((item) =>
+    textsOf(item).includes('常用命令.md'),
+  )
+  await click(panel.runtime, fileItem)
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  assert.ok(area, 'the editor renders a textarea')
+  area.props.onKeyUp({ currentTarget: { selectionStart: offset } })
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+  return area
+}
+
+const BLAME_ENTRY = {
+  finalLine: 2,
+  line: 2,
+  sha: '8ebd47bbc746c55f4130d1ff5fa0753cf54e7b24',
+  author: 'E2E Fixture',
+  authorTime: 1794046229,
+  summary: 'docs: first fixture commit',
+}
+
+test('the stylesheet hides the commit card and reveals it on hover or focus', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const css = styles[0].textContent
+
+  assert.ok(
+    /\.lmn-blame-card\{[^}]*display:none/.test(css),
+    'the commit card starts hidden',
+  )
+  assert.ok(
+    /\.lmn-blame-chip:hover \.lmn-blame-card[^{]*\{[^}]*display:block/.test(css),
+    'hovering the chip reveals the card',
+  )
+  assert.ok(
+    /\.lmn-blame-chip:focus-within \.lmn-blame-card[^{]*\{[^}]*display:block/.test(css),
+    'focusing the chip reveals the card too, so it is keyboard reachable',
+  )
+  assert.ok(
+    /\.lmn-blame-card\{[^}]*z-index:20/.test(css),
+    'the card floats above the textarea it covers',
+  )
+})
+
+test('the blame chip summarises the cursor line and carries the full commit card', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    blameEntries: [BLAME_ENTRY],
+  })
+  const panel = await mountPanel({ namespace })
+
+  // Line 2 is "two", so offset 5 sits inside it.
+  await openFileAt(panel, 5)
+
+  assert.ok(
+    calls.some((call) => call[0] === 'gitBlame' && call[3] === 2),
+    'the cursor line is the line blamed',
+  )
+
+  const bar = findOne(panel.runtime.tree(), 'lmn-blame-bar')
+  assert.ok(bar, 'a blame bar renders above the editor')
+  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
+  assert.ok(chip, 'the bar holds a chip')
+  assert.equal(
+    textsOf(chip).split('L')[0],
+    '',
+    'the chip text starts with the line number',
+  )
+  assert.ok(
+    textsOf(chip).includes('L2'),
+    `the chip names the line: ${textsOf(chip)}`,
+  )
+  assert.ok(
+    textsOf(chip).includes('8ebd47bbc'),
+    `the chip shortens the commit sha to nine characters: ${textsOf(chip)}`,
+  )
+  assert.ok(
+    textsOf(chip).includes('E2E Fixture'),
+    `the chip names the author: ${textsOf(chip)}`,
+  )
+  assert.ok(
+    textsOf(chip).includes('2026-11-07'),
+    `the chip shows the commit day: ${textsOf(chip)}`,
+  )
+
+  const card = findOne(panel.runtime.tree(), 'lmn-blame-card')
+  assert.ok(card, 'the chip contains the detail card')
+  const cardText = textsOf(card)
+  assert.ok(
+    cardText.includes('8ebd47bbc746c55f4130d1ff5fa0753cf54e7b24'),
+    `the card carries the full sha: ${cardText}`,
+  )
+  assert.ok(
+    cardText.includes('docs: first fixture commit'),
+    `the card carries the commit summary: ${cardText}`,
+  )
+  assert.equal(
+    chip.props.tabIndex,
+    0,
+    'the chip is focusable so the card can be revealed without a mouse',
+  )
+})
+
+test('a line with no commit history shows an uncommitted chip instead of a card', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+  })
+  const panel = await mountPanel({ namespace })
+  await openFileAt(panel, 5)
+
+  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
+  assert.ok(chip, 'the chip still renders')
+  assert.equal(textsOf(chip), `${NS}:panel.uncommitted`, 'the chip says the line is uncommitted')
+  assert.ok(
+    String(chip.props.className).includes('is-uncommitted'),
+    'the chip is styled as uncommitted',
+  )
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-blame-card').length, 0, 'no card to hover')
+})
+
+test('both locales name the uncommitted state and the card labels', () => {
+  const zh = source.slice(source.indexOf('const ZH = {'), source.indexOf('const EN = {'))
+  const en = source.slice(source.indexOf('const EN = {'), source.indexOf('const STYLE ='))
+
+  assert.ok(zh.includes("'panel.uncommitted': '未提交'"), 'the Chinese dictionary has the key')
+  assert.ok(en.includes("'panel.uncommitted': 'Uncommitted'"), 'the English dictionary has the key')
+
+  for (const key of ['panel.blameAuthor', 'panel.blameDate', 'panel.blameCommit', 'panel.blameSummary']) {
+    assert.ok(zh.includes(`'${key}'`), `the Chinese dictionary has ${key}`)
+    assert.ok(en.includes(`'${key}'`), `the English dictionary has ${key}`)
+  }
 })
 

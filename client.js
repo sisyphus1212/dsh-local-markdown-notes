@@ -145,7 +145,8 @@ window.__ModuleLoader__.load({
 .lmn-kv{display:flex;gap:6px}
 .lmn-kv b{font-weight:600}
 .lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 12px 0;min-width:0}
-.lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none;cursor:default}
+.lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;min-width:0;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;outline:none;cursor:default}
+.lmn-blame-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-blame-chip:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
 .lmn-blame-chip.is-uncommitted{color:var(--dsw-alias-label-tertiary,#81858c);font-style:italic}
 .lmn-blame-card{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;min-width:240px;max-width:360px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));box-shadow:0 6px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary,CanvasText);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;text-align:left;cursor:auto}
@@ -341,7 +342,17 @@ window.__ModuleLoader__.load({
       const entries = Array.isArray(value?.entries) ? value.entries : []
       if (entries.length === 0) return null
       const matching = entries.find((entry) => (entry.finalLine ?? entry.line) === line)
-      return matching ?? entries[0] ?? null
+      const picked = matching ?? entries[0] ?? null
+      // git answers for a working-tree line with an all-zero sha ("Not Committed
+      // Yet") instead of omitting the entry, so an uncommitted line still yields
+      // an entry; report it as uncommitted rather than as a bogus 000000000 commit.
+      return picked !== null && isUncommittedEntry(picked) ? null : picked
+    }
+
+    /** Whether a blame entry describes a line that has no commit yet. */
+    function isUncommittedEntry(entry) {
+      const sha = String(entry?.sha ?? '')
+      return /^0+$/.test(sha) || entry?.author === 'Not Committed Yet'
     }
 
     /** The `YYYY-MM-DD` day of a blame author time, which git reports in seconds. */
@@ -732,12 +743,16 @@ window.__ModuleLoader__.load({
                 ? h(
                     'div',
                     { className: 'lmn-blame-chip is-uncommitted', tabIndex: 0 },
-                    t('panel.uncommitted'),
+                    h('span', { className: 'lmn-blame-chip-text' }, t('panel.uncommitted')),
                   )
                 : h(
                     'div',
                     { className: 'lmn-blame-chip', tabIndex: 0 },
-                    `L${lineEntry.finalLine ?? lineEntry.line} · ${String(lineEntry.sha ?? '').slice(0, 9)} · ${lineEntry.author ?? '?'} · ${blameDay(lineEntry.authorTime)}`,
+                    h(
+                      'span',
+                      { className: 'lmn-blame-chip-text' },
+                      `L${lineEntry.finalLine ?? lineEntry.line} · ${String(lineEntry.sha ?? '').slice(0, 9)} · ${lineEntry.author ?? '?'} · ${blameDay(lineEntry.authorTime)}`,
+                    ),
                     h(
                       'div',
                       { className: 'lmn-blame-card' },

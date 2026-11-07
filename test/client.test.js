@@ -984,6 +984,44 @@ test('the stylesheet hides the commit card and reveals it on hover or focus', as
   )
 })
 
+test('the card is not clipped by the chip it hangs below', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const css = styles[0].textContent
+  const chipRule = /\.lmn-blame-chip\{([^}]*)\}/.exec(css)
+  assert.ok(chipRule, 'the chip has a rule')
+  assert.ok(
+    !/overflow\s*:/.test(chipRule[1]),
+    `the chip must not clip, or it cuts off the card hanging below it: ${chipRule[1]}`,
+  )
+  assert.ok(
+    /\.lmn-blame-chip-text\{[^}]*overflow:hidden[^}]*text-overflow:ellipsis/.test(css),
+    'the ellipsis moves to an inner span, so a long chip still truncates',
+  )
+
+  // The card hangs below the chip's own box, so it must escape the chip.
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    blameEntries: [BLAME_ENTRY],
+  })
+  const panel = await mountPanel({ namespace })
+  await openFileAt(panel, 5)
+
+  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
+  const card = findOne(panel.runtime.tree(), 'lmn-blame-card')
+  assert.ok(chip && card, 'both the chip and the card render')
+  const textSpan = findOne(chip, 'lmn-blame-chip-text')
+  assert.ok(textSpan, 'the chip text lives in its own truncating span')
+  assert.equal(
+    findAll(textSpan, 'lmn-blame-card').length,
+    0,
+    'the card hangs outside the truncating span, so that span cannot clip it',
+  )
+})
+
+
 test('the blame chip summarises the cursor line and carries the full commit card', async () => {
   const { namespace, calls } = treeNamespace({
     entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
@@ -1072,4 +1110,67 @@ test('both locales name the uncommitted state and the card labels', () => {
     assert.ok(en.includes(`'${key}'`), `the English dictionary has ${key}`)
   }
 })
+
+// git describes a working-tree line it cannot attribute with an all-zero sha and
+// the author "Not Committed Yet", so such an entry must not read as a real commit.
+const ZERO_SHA_ENTRY = {
+  finalLine: 2,
+  line: 2,
+  sha: '0000000000000000000000000000000000000000',
+  author: 'Not Committed Yet',
+  authorTime: 1794050650,
+  summary: 'Version of 常用命令.md from 常用命令.md',
+}
+
+test('an all-zero blame sha is shown as uncommitted, not as a 000000000 commit', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    blameEntries: [ZERO_SHA_ENTRY],
+  })
+  const panel = await mountPanel({ namespace })
+  await openFileAt(panel, 5)
+
+  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
+  assert.ok(chip, 'the chip still renders for an all-zero entry')
+  assert.equal(
+    textsOf(chip),
+    `${NS}:panel.uncommitted`,
+    'the chip reports the line as uncommitted instead of naming the zero sha',
+  )
+  assert.ok(
+    String(chip.props.className).includes('is-uncommitted'),
+    'the chip is styled as uncommitted, so the declared style matches the text',
+  )
+  assert.equal(
+    findAll(panel.runtime.tree(), 'lmn-blame-card').length,
+    0,
+    'an uncommitted line has no commit card to hover',
+  )
+})
+
+test('a committed line beside an all-zero line still names its own commit', async () => {
+  const zeroOnLineThree = { ...ZERO_SHA_ENTRY, finalLine: 3, line: 3 }
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    blameEntries: [BLAME_ENTRY, zeroOnLineThree],
+  })
+  const panel = await mountPanel({ namespace })
+
+  // Offset 5 sits inside line 2, the committed one.
+  await openFileAt(panel, 5)
+
+  const chip = findOne(panel.runtime.tree(), 'lmn-blame-chip')
+  assert.ok(chip, 'the chip renders for the committed line')
+  const text = textsOf(chip)
+  assert.ok(text.includes('L2'), `the committed line keeps its own line number: ${text}`)
+  assert.ok(text.includes('8ebd47bbc'), `the committed line still names its sha: ${text}`)
+  assert.ok(text.includes('E2E Fixture'), `the committed line still names its author: ${text}`)
+  assert.ok(!text.includes('000000000'), `the zero-sha line did not win: ${text}`)
+  assert.ok(
+    !String(chip.props.className).includes('is-uncommitted'),
+    'a committed line is not styled as uncommitted',
+  )
+  assert.ok(findOne(panel.runtime.tree(), 'lmn-blame-card'), 'the commit card is present')
+})
+
 

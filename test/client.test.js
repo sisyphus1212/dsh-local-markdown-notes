@@ -1460,6 +1460,8 @@ test('the preview toggle renders markdown as elements and replaces the textarea'
     '| --- | --- |',
     '| 1 | 2 |',
     '',
+    '~~strike~~ stays literal',
+    '',
   ].join('\n')
   let area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
   area.props.onChange({ target: { value: markdown } })
@@ -1499,6 +1501,10 @@ test('the preview toggle renders markdown as elements and replaces the textarea'
   assert.ok(table, 'a GFM table becomes a table element')
   assert.equal(countType(table, 'th'), 2, 'the header row keeps both cells')
   assert.equal(countType(table, 'td'), 2, 'the body row keeps both cells')
+  assert.ok(
+    textsOf(render).includes('~~strike~~ stays literal'),
+    'markup the renderer does not know is shown as written, never dropped',
+  )
   assert.ok(
     !JSON.stringify(render).includes('dangerouslySetInnerHTML'),
     'the renderer never injects raw HTML',

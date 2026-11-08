@@ -3094,15 +3094,18 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
 
         const api = createApi(ctx)
 
-        // The `@` menu is an optional host capability: probe it instead of
-        // injecting, so the plugin still mounts on a host without it.
-        const inputTriggers = ctx.get('inputTriggers')
-        if (inputTriggers !== undefined) {
-          ctx.effect(
-            () => inputTriggers.registerSource(buildNotesSource(api, t)),
+        // The `@` menu is an optional host capability: a scoped injection waits
+        // for the service without making it a hard dependency of the whole
+        // plugin, so the panel still mounts on a host that never provides it.
+        // `ctx.get('inputTriggers')` cannot be used here: it reads undefined
+        // until the owning fiber is ready, which in practice is never at apply
+        // time.
+        ctx.inject(['inputTriggers'], (scope) => {
+          scope.effect(
+            () => scope.inputTriggers.registerSource(buildNotesSource(api, t)),
             'local-markdown-notes: @ notes source',
           )
-        }
+        })
 
         ctx.effect(
           () =>

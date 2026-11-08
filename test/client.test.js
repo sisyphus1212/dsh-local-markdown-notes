@@ -306,6 +306,7 @@ function fakeCtx(options = {}) {
     injected: [],
     unmounts: 0,
     sources: [],
+    waits: [],
   }
 
   const ctx = {
@@ -344,6 +345,26 @@ function fakeCtx(options = {}) {
     get(name) {
       if (name === 'inputTriggers') return inputTriggers
       return name === 'remote.notes' ? namespace : undefined
+    },
+    // Cordis starts the callback in a scoped fiber once every named service is
+    // available. A missing service means the body never runs -- not an error.
+    inject(names, callback) {
+      record.waits.push([...names])
+      const services = {}
+      for (const name of names) {
+        const service = ctx.get(name)
+        if (service === undefined) return () => {}
+        services[name] = service
+      }
+      const scope = {
+        ...services,
+        effect(factory, label) {
+          record.effects.push({ label, dispose: factory() })
+          return () => {}
+        },
+      }
+      const dispose = callback(scope)
+      return typeof dispose === 'function' ? dispose : () => {}
     },
   }
 

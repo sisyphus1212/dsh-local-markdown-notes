@@ -65,9 +65,17 @@ window.__ModuleLoader__.load({
       'panel.searching': '搜索中…',
       'panel.searchEmpty': '没有找到匹配内容。',
       'panel.searchHint': '输入关键词搜索当前文件夹',
-      'panel.searchHits': '命中',
+      'panel.searchHits': '处匹配',
+      'panel.searchFiles': '个文件',
       'panel.searchScanned': '已扫描',
       'panel.searchTruncated': '结果不完整',
+      'panel.rename': '重命名',
+      'panel.delete': '删除',
+      'panel.renamePlaceholder': '新文件名',
+      'panel.deleteQuestion': '确定删除？',
+      'panel.confirm': '确认',
+      'panel.cancel': '取消',
+      'panel.deletedNotice': '文件已删除',
     }
 
     const EN = {
@@ -127,9 +135,17 @@ window.__ModuleLoader__.load({
       'panel.searching': 'Searching…',
       'panel.searchEmpty': 'No matches.',
       'panel.searchHint': 'Type to search the current folder',
-      'panel.searchHits': 'hits',
+      'panel.searchHits': 'matches',
+      'panel.searchFiles': 'files',
       'panel.searchScanned': 'scanned',
       'panel.searchTruncated': 'partial results',
+      'panel.rename': 'Rename',
+      'panel.delete': 'Delete',
+      'panel.renamePlaceholder': 'New file name',
+      'panel.deleteQuestion': 'Delete this file?',
+      'panel.confirm': 'Confirm',
+      'panel.cancel': 'Cancel',
+      'panel.deletedNotice': 'The file was deleted.',
     }
 
     const STYLE = `
@@ -157,6 +173,10 @@ window.__ModuleLoader__.load({
 .lmn-btn-primary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
 .lmn-btn.lmn-btn-primary:hover{background:var(--dsw-alias-button-primary-hover,#43454a);color:var(--dsw-alias-label-primary-foreground,#fff)}
 .lmn-btn.lmn-btn-primary:focus-visible{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
+.lmn-btn-danger{color:var(--dsw-alias-state-error-primary,#ec1313);border-color:var(--dsw-alias-state-error-primary,#ec1313)}
+.lmn-btn.lmn-btn-danger:hover{background:var(--dsw-alias-state-error-primary,#ec1313);color:var(--dsw-alias-label-primary-foreground,#fff)}
+.lmn-confirm{padding-top:3px;padding-bottom:3px}
+.lmn-confirm-text{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-list{overflow:auto;min-height:0;padding:0}
 .lmn-tree{display:flex;flex-direction:column;padding:0 0 6px}
 .lmn-node{display:block;min-width:0}
@@ -175,7 +195,11 @@ window.__ModuleLoader__.load({
 .lmn-row-actions{flex:0 0 auto;display:flex;align-items:center;gap:1px;margin-left:2px}
 .lmn-row .lmn-iconbtn{width:20px;height:20px;opacity:0;transition:opacity .1s}
 .lmn-row:hover .lmn-iconbtn,.lmn-row .lmn-iconbtn:focus-visible{opacity:1}
-.lmn-row .lmn-iconbtn[disabled]{opacity:0}
+/* A disabled action still has to be seen: hiding it outright made the whole
+   action group vanish while a dialog-less create was pending, which read as
+   "the buttons are gone". Dim it instead and keep the row affordance alive. */
+.lmn-row .lmn-iconbtn[disabled]{opacity:.35;cursor:default}
+.lmn-row:hover .lmn-iconbtn[disabled]{opacity:.35}
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
@@ -346,6 +370,8 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       ['gitDiff', ['projectId', 'relativePath'], 'notes.GitDiff'],
       ['gitBlame', ['projectId', 'relativePath', 'line'], 'notes.BlameEntry'],
       ['createEntry', ['projectId', 'relativePath', 'kind'], 'notes.CreatedEntry'],
+      ['deleteEntry', ['projectId', 'relativePath'], 'notes.RemovedEntry'],
+      ['renameEntry', ['projectId', 'fromPath', 'toPath'], 'notes.RenamedEntry'],
       ['searchNotes', ['projectId', 'query'], 'notes.SearchResults'],
     ]
 
@@ -434,6 +460,9 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         gitBlame: (projectId, relativePath, line) => call('gitBlame', [projectId, relativePath, line]),
         createEntry: (projectId, relativePath, kind) =>
           call('createEntry', [projectId, relativePath, kind]),
+        deleteEntry: (projectId, relativePath) => call('deleteEntry', [projectId, relativePath]),
+        renameEntry: (projectId, fromPath, toPath) =>
+          call('renameEntry', [projectId, fromPath, toPath]),
         searchNotes: (projectId, query) => call('searchNotes', [projectId, query]),
       }
     }
@@ -1379,6 +1408,8 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       const [searching, setSearching] = React.useState(false)
       const [hitKey, setHitKey] = React.useState(null)
       const [creating, setCreating] = React.useState(null)
+      const [renaming, setRenaming] = React.useState(null)
+      const [deleting, setDeleting] = React.useState(null)
       const [viewMode, setViewMode] = React.useState('edit')
       const [bottomHeight, setBottomHeight] = React.useState(null)
       const [resizing, setResizing] = React.useState(false)
@@ -1650,6 +1681,9 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
        */
       const searchTimer = React.useRef(null)
       const searchSeq = React.useRef(0)
+      // A hit can only be scrolled to once the editor has rendered that file:
+      // the request is remembered here and consumed by the effect below.
+      const pendingHit = React.useRef(null)
 
       const runSearch = React.useCallback(
         async (target, query) => {
@@ -1729,21 +1763,25 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         return offset
       }
 
-      /** Opening a hit reuses the normal file path so saving and blame still work. */
+      /**
+       * Opening a hit reuses the normal file path so saving and blame still work.
+       *
+       * The caret cannot be placed here: the textarea that will hold the file is
+       * rendered by the commit that follows these state updates, so at this point
+       * the DOM still shows the previous buffer (or no editor at all). The request
+       * is parked in `pendingHit` and the caret is placed once that commit lands.
+       */
       const openHit = React.useCallback(
         async (hit) => {
           if (project === null) return
           setHitKey(`${hit.path}:${hit.line}`)
+          pendingHit.current = { path: hit.path, line: hit.line }
           const opened = await openFile(project, hit.path)
-          if (!opened) return
+          if (!opened) {
+            pendingHit.current = null
+            return
+          }
           setViewMode('edit')
-          const area = codeAreaRef.current
-          if (area === null) return
-          // The textarea already holds the file that was just read, so the
-          // offset is measured on its own value rather than on stale state.
-          const offset = lineOffset(typeof area.value === 'string' ? area.value : '', hit.line)
-          if (typeof area.focus === 'function') area.focus()
-          if (typeof area.setSelectionRange === 'function') area.setSelectionRange(offset, offset)
         },
         [openFile, project],
       )
@@ -1863,6 +1901,102 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         }
       }, [api, creating, loadPath, openFile, project, refreshStatus, report])
 
+      /** Open the inline name box on a file row, pre-filled with its current name. */
+      const beginRename = React.useCallback(
+        (relative) => {
+          if (project === null) return
+          const parent = parentOf(relative)
+          const cut = relative.lastIndexOf('/')
+          setRenaming({ path: relative, parent, value: relative.slice(cut + 1) })
+          setDeleting(null)
+          setNotice(null)
+        },
+        [project],
+      )
+
+      const cancelRename = React.useCallback(() => {
+        setRenaming(null)
+      }, [])
+
+      /**
+       * Rename the file the inline box names.
+       *
+       * The Host refuses a name that collides with an existing entry and a name
+       * that is not Markdown, so the client only trims and appends `.md` when it
+       * is missing — the same normalisation a create goes through.
+       */
+      const confirmRename = React.useCallback(async () => {
+        if (renaming === null || project === null) return
+        const { path, parent, value } = renaming
+        const name = normalizeNewName(value, 'file')
+        if (name === '') {
+          setRenaming(null)
+          return
+        }
+        const target = joinRelative(parent, name)
+        if (target === path) {
+          setRenaming(null)
+          return
+        }
+        try {
+          setBusy('rename')
+          const renamed = await api.renameEntry(project.id, path, target)
+          const movedPath = renamed?.path ?? target
+          setRenaming(null)
+          await loadPath(project, parent)
+          // Keep following the file when the renamed one is the one on screen.
+          if (file !== null && file.path === path) {
+            await openFile(project, movedPath)
+          }
+          await refreshStatus(project)
+          setError(null)
+        } catch (caught) {
+          report(caught)
+        } finally {
+          setBusy(null)
+        }
+      }, [api, file, loadPath, openFile, project, refreshStatus, renaming, report])
+
+      /** Ask before deleting: a file row is one click away from losing a note. */
+      const beginDelete = React.useCallback((relative) => {
+        setRenaming(null)
+        setDeleting({ path: relative })
+        setNotice(null)
+      }, [])
+
+      const cancelDelete = React.useCallback(() => {
+        setDeleting(null)
+      }, [])
+
+      const confirmDelete = React.useCallback(async () => {
+        if (deleting === null || project === null) return
+        const { path } = deleting
+        try {
+          setBusy('delete')
+          await api.deleteEntry(project.id, path)
+          setDeleting(null)
+          const parent = parentOf(path)
+          await loadPath(project, parent)
+          // The open file is gone: clear the editor instead of showing a ghost.
+          if (file !== null && file.path === path) {
+            setFile(null)
+            setDraft('')
+            setBlame(null)
+            setLineEntry(null)
+            setDiff(null)
+            setDiffPath(null)
+            setNotice('panel.deletedNotice')
+            clearSession()
+          }
+          await refreshStatus(project)
+          setError(null)
+        } catch (caught) {
+          report(caught)
+        } finally {
+          setBusy(null)
+        }
+      }, [api, deleting, file, loadPath, project, refreshStatus, report])
+
       const loadDiff = React.useCallback(
         async (target, relative) => {
           try {
@@ -1930,6 +2064,35 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         },
         [api, draft, file, project],
       )
+
+      /**
+       * Places the caret a hit asked for, once the editor actually shows that
+       * file in edit mode. Doing it inside `openHit` lands on whatever textarea
+       * the previous buffer left behind, which puts the caret at offset 0.
+       */
+      React.useEffect(() => {
+        const hit = pendingHit.current
+        if (hit === null) return
+        if (file === null || file.path !== hit.path) return
+        if (viewMode !== 'edit') return
+        const area = codeAreaRef.current
+        if (area === null) return
+        pendingHit.current = null
+        const text = typeof area.value === 'string' ? area.value : draft
+        const offset = lineOffset(text, hit.line)
+        if (typeof area.focus === 'function') area.focus()
+        if (typeof area.setSelectionRange === 'function') area.setSelectionRange(offset, offset)
+        // Bring the matched line into view instead of leaving it scrolled away.
+        const lines = Math.max(1, String(text).split('\n').length)
+        const tall = typeof area.scrollHeight === 'number' ? area.scrollHeight : 0
+        const visible = typeof area.clientHeight === 'number' ? area.clientHeight : 0
+        if (tall > 0 && visible > 0) {
+          const rowHeight = tall / lines
+          const target = (hit.line - 1) * rowHeight
+          area.scrollTop = Math.max(0, target - Math.floor(visible / 3))
+          syncGutterScroll()
+        }
+      }, [draft, file, viewMode, syncGutterScroll])
 
       const dirty = file !== null && draft !== (file.content ?? draft) && busy !== 'save'
 
@@ -2029,6 +2192,18 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           ),
         )
 
+      /**
+       * The Explorer row icons, drawn on a 16px grid. `newFile` and `newFolder`
+       * carry a small plus; `rename` is the pencil and `delete` the bin, so a
+       * file row offers the two actions that make sense on a file.
+       */
+      const ICON_PATHS = {
+        newFile: 'M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5zM9.5 1.5v3h3M8 8v4M6 10h4',
+        newFolder: 'M1.8 3.4a.9.9 0 0 1 .9-.9h3l1.3 1.4h5.2a.9.9 0 0 1 .9.9v7.5a.9.9 0 0 1-.9.9H2.7a.9.9 0 0 1-.9-.9zM8 7.6v4M6 9.6h4',
+        rename: 'M11.2 2.3 13.7 4.8 5.6 12.9 2.3 13.7 3.1 10.4zM9.7 3.8l2.5 2.5',
+        delete: 'M2.8 4.3h10.4M6.3 4.3V2.9a.6.6 0 0 1 .6-.6h2.2a.6.6 0 0 1 .6.6v1.4M4.3 4.3l.7 8.4a.9.9 0 0 0 .9.8h4.2a.9.9 0 0 0 .9-.8l.7-8.4M6.6 6.9v3.9M9.4 6.9v3.9',
+      }
+
       /** A compact square icon button, the way the Explorer header carries its actions. */
       const iconButton = (kind, label, onClick) =>
         h(
@@ -2037,17 +2212,14 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             className: 'lmn-iconbtn',
             title: label,
             'aria-label': label,
-            disabled: busy === 'create',
+            disabled: busy === 'create' || busy === 'rename' || busy === 'delete',
             onClick,
           },
           h(
             'svg',
             { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true' },
             h('path', {
-              d:
-                kind === 'newFile'
-                  ? 'M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5zM9.5 1.5v3h3M8 8v4M6 10h4'
-                  : 'M1.8 3.4a.9.9 0 0 1 .9-.9h3l1.3 1.4h5.2a.9.9 0 0 1 .9.9v7.5a.9.9 0 0 1-.9.9H2.7a.9.9 0 0 1-.9-.9zM8 7.6v4M6 9.6h4',
+              d: ICON_PATHS[kind] ?? ICON_PATHS.newFolder,
               fill: 'none',
               stroke: 'currentColor',
               strokeWidth: 1.1,
@@ -2069,6 +2241,21 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           iconButton('newFolder', t('panel.newFolder'), (event) => {
             event.stopPropagation()
             beginCreate('directory', relative)
+          }),
+        )
+
+      /** Rename and delete, shown inline on a file row. */
+      const fileActions = (relative) =>
+        h(
+          'span',
+          { className: 'lmn-row-actions' },
+          iconButton('rename', t('panel.rename'), (event) => {
+            event.stopPropagation()
+            beginRename(relative)
+          }),
+          iconButton('delete', t('panel.delete'), (event) => {
+            event.stopPropagation()
+            beginDelete(relative)
           }),
         )
 
@@ -2127,6 +2314,70 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         )
       }
 
+      /**
+       * The inline rename box, rendered directly under the row it renames so the
+       * name being replaced stays visible while the new one is typed.
+       */
+      const renameRow = (depth) => {
+        const finish = () => void confirmRename()
+        return h(
+          'div',
+          { key: 'rename', className: 'lmn-create', style: { paddingLeft: (8 + depth * 10) + 'px' } },
+          h('input', {
+            autoFocus: true,
+            value: renaming === null ? '' : renaming.value,
+            placeholder: t('panel.renamePlaceholder'),
+            'aria-label': t('panel.renamePlaceholder'),
+            onChange: (event) => {
+              const value = event.target.value
+              setRenaming((current) => (current === null ? current : { ...current, value }))
+            },
+            onKeyDown: (event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void confirmRename()
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelRename()
+              }
+            },
+            onBlur: () => cancelRename(),
+            onKeyUp: () => {},
+          }),
+          h('button', { className: 'lmn-btn', onMouseDown: (event) => event.preventDefault(), onClick: finish }, '✓'),
+        )
+      }
+
+      /**
+       * The delete confirmation, inline under the row. Deleting a note is not
+       * undoable here, so it takes a second, explicit click — a browser confirm
+       * would block the whole page and cannot be styled or tested.
+       */
+      const deleteRow = (depth) =>
+        h(
+          'div',
+          { key: 'delete', className: 'lmn-create lmn-confirm', style: { paddingLeft: (8 + depth * 10) + 'px' } },
+          h('span', { className: 'lmn-confirm-text' }, t('panel.deleteQuestion')),
+          h(
+            'button',
+            {
+              className: 'lmn-btn lmn-btn-danger',
+              onMouseDown: (event) => event.preventDefault(),
+              onClick: () => void confirmDelete(),
+            },
+            t('panel.confirm'),
+          ),
+          h(
+            'button',
+            {
+              className: 'lmn-btn',
+              onMouseDown: (event) => event.preventDefault(),
+              onClick: () => cancelDelete(),
+            },
+            t('panel.cancel'),
+          ),
+        )
+
       /** One file or folder inside a project, expanded in place. */
       const treeNode = (target, entry, depth) => {
         const relative = entry.path
@@ -2162,12 +2413,17 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           chevron(isDirectory, open),
           isDirectory ? folderGlyph(open) : fileGlyph(entry.name),
           h('span', { className: 'lmn-name' }, entry.name),
-          isDirectory ? rowActions(relative) : null,
+          isDirectory ? rowActions(relative) : fileActions(relative),
         )
+        // The inline boxes sit under their own row, at the same indentation.
+        const renamingThis = !isDirectory && renaming !== null && renaming.path === relative
+        const deletingThis = !isDirectory && deleting !== null && deleting.path === relative
         return h(
           'div',
           { key: relative, className: 'lmn-node' },
           row,
+          renamingThis ? renameRow(depth) : null,
+          deletingThis ? deleteRow(depth) : null,
           open ? childNodes(target, relative, depth + 1) : null,
         )
       }
@@ -2303,7 +2559,10 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         if (searchResult === null) return h('div', { className: 'lmn-search-note' }, t('panel.searchHint'))
         const hits = searchResult.hits
         if (hits.length === 0) return h('div', { className: 'lmn-search-note' }, t('panel.searchEmpty'))
-        const stats = `${searchResult.matched} ${t('panel.searchHits')} · ${searchResult.scanned} ${t('panel.searchScanned')}${
+        // `hits.length` is the number of matching lines; `matched` counts the files
+        // they live in. Saying "hits" for the file count reads as a contradiction as
+        // soon as one file has two matching lines.
+        const stats = `${hits.length} ${t('panel.searchHits')} · ${searchResult.matched} ${t('panel.searchFiles')} · ${searchResult.scanned} ${t('panel.searchScanned')}${
           searchResult.truncated ? ` · ${t('panel.searchTruncated')}` : ''
         }`
         return h(

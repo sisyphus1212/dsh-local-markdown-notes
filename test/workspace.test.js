@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { normalizeRelativePath } from '../lib/pure.js'
-import { createEntry, readFile, listEntries, resolveEntry, writeFile } from '../lib/workspace.js'
+import { createEntry, deleteEntry, readFile, listEntries, renameEntry, resolveEntry, writeFile } from '../lib/workspace.js'
 
 /** A minimal in-memory filesystem: paths are plain POSIX-ish strings. */
 function fakeFs(initial, options = {}) {
@@ -18,6 +18,8 @@ function fakeFs(initial, options = {}) {
   const links = new Map(Object.entries(options.links ?? {}))
   const writes = []
   const mkdirs = []
+  const deletions = []
+  const moves = []
   const normalise = (value) => {
     const trimmed = String(value).replace(/\\/g, '/').replace(/\/+$/, '')
     return trimmed === '' ? '/' : trimmed
@@ -139,7 +141,56 @@ function fakeFs(initial, options = {}) {
       directories.add(key)
       return undefined
     },
+    async deleteFile(target, expected, signal, sandboxPolicy) {
+      const key = deref(target.targetKey ?? target)
+      if (!files.has(key)) {
+        const error = new Error(`ENOENT: no such file or directory, unlink '${key}'`)
+        error.code = 'ENOENT'
+        throw error
+      }
+      if (expected !== undefined && expected.version !== `v-${files.get(key).length}-${version}`) {
+        const error = new Error(`cannot delete ${key}: file changed since it was read`)
+        error.code = 'FS_STALE_VERSION'
+        throw error
+      }
+      const before = files.get(key)
+      files.delete(key)
+      deletions.push({ key, sandboxPolicy })
+      version += 1
+      return { before }
+    },
+    async moveFile(source, destination, moveOptions = {}, signal, sandboxPolicy) {
+      const from = deref(source.targetKey ?? source)
+      const to = deref(destination.targetKey ?? destination)
+      if (!files.has(from)) {
+        const error = new Error(`ENOENT: no such file or directory, rename '${from}'`)
+        error.code = 'ENOENT'
+        throw error
+      }
+      if (files.has(to) && moveOptions.expectedDestination?.kind === 'createIfAbsent') {
+        const error = new Error(`cannot create ${to}: something is already there`)
+        error.code = 'FS_ALREADY_EXISTS'
+        throw error
+      }
+      moves.push({ from, to, sandboxPolicy, options: moveOptions })
+      const before = files.get(from)
+      files.set(to, before)
+      const sourceDeleted = moveOptions.copyOnly === true ? false : true
+      if (sourceDeleted) files.delete(from)
+      version += 1
+      return sourceDeleted
+        ? { sourceBefore: before, destination: { targetKey: to, displayPath: to }, sourceDeleted: true }
+        : {
+            sourceBefore: before,
+            destination: { targetKey: to, displayPath: to },
+            sourceDeleted: false,
+            sourceFailure: { code: 'EPERM', message: 'cannot remove the source' },
+          }
+    },
     mkdirs,
+    deletions,
+    moves,
+    directories,
   }
 }
 
@@ -358,4 +409,161 @@ test('createEntry refuses an unknown kind before touching the filesystem', async
   )
   assert.equal(fs.writes.length, 0)
   assert.equal(fs.mkdirs.length, 0)
+})
+
+test('deleteEntry removes a Markdown file through the fenced deleteFile', async () => {
+  const fs = fakeFs({ 'C:/notes/old.md': '# old' })
+  const deleted = await deleteEntry(fs, 'C:/notes', 'old.md', {})
+  assert.deepEqual(deleted, { path: 'old.md', kind: 'file' })
+  assert.equal(fs.deletions.length, 1)
+  assert.equal(fs.deletions[0].key, 'C:/notes/old.md')
+  // Deleting is a write: it carries the same fence as writing, or the sandbox
+  // backend would fall back to the agent workspace and refuse the folder.
+  assert.deepEqual(fs.deletions[0].sandboxPolicy, {
+    mode: 'workspace-write',
+    workspaceRoot: 'C:/notes',
+    additionalWritableRoots: ['C:/notes'],
+  })
+  assert.equal(await fs.readText({ targetKey: 'C:/notes/old.md' }).catch((error) => error.message.startsWith('ENOENT')), true)
+})
+
+test('deleteEntry refuses a non-Markdown file', async () => {
+  const fs = fakeFs({ 'C:/notes/notes.txt': 'plain' })
+  await assert.rejects(
+    () => deleteEntry(fs, 'C:/notes', 'notes.txt', {}),
+    (error) => error.code === 'notes/not-markdown',
+  )
+  assert.equal(fs.deletions.length, 0)
+})
+
+test('deleteEntry removes an empty folder through the injected rmdir', async () => {
+  const fs = fakeFs({}, { directories: ['C:/notes', 'C:/notes/empty'] })
+  const calls = []
+  const deleted = await deleteEntry(fs, 'C:/notes', 'empty', {
+    rmdir: async (path) => {
+      calls.push(path)
+      fs.directories.delete(path)
+    },
+  })
+  assert.deepEqual(deleted, { path: 'empty', kind: 'directory' })
+  // `targetKey` is opaque, so the subprocess path is what the injected rmdir gets.
+  assert.deepEqual(calls, ['C:/notes/empty'])
+  assert.equal(await fs.stat({ targetKey: 'C:/notes/empty' }), undefined)
+})
+
+test('deleteEntry refuses a folder that still has files in it', async () => {
+  const fs = fakeFs({ 'C:/notes/sub/keep.md': '# keep' }, { directories: ['C:/notes', 'C:/notes/sub'] })
+  const calls = []
+  await assert.rejects(
+    () =>
+      deleteEntry(fs, 'C:/notes', 'sub', {
+        rmdir: async (path) => {
+          calls.push(path)
+          const error = new Error(`ENOTEMPTY: directory not empty, rmdir '${path}'`)
+          error.code = 'ENOTEMPTY'
+          throw error
+        },
+      }),
+    (error) => error.code === 'notes/not-empty',
+  )
+  assert.deepEqual(calls, ['C:/notes/sub'])
+  assert.equal(fs.deletions.length, 0, 'a refused folder delete must not touch the files')
+})
+
+test('deleteEntry refuses the project root, a traversal and a missing entry', async () => {
+  const fs = fakeFs({})
+  await assert.rejects(
+    () => deleteEntry(fs, 'C:/notes', '', {}),
+    (error) => error.code === 'notes/bad-relative-path',
+  )
+  await assert.rejects(
+    () => deleteEntry(fs, 'C:/notes', '../outside.md', {}),
+    (error) => error.code === 'notes/bad-relative-path',
+  )
+  await assert.rejects(
+    () => deleteEntry(fs, 'C:/notes', 'gone.md', {}),
+    (error) => error.code === 'notes/not-found',
+  )
+  assert.equal(fs.deletions.length, 0)
+})
+
+test('renameEntry moves a Markdown file through the fenced moveFile', async () => {
+  const fs = fakeFs({ 'C:/notes/before.md': '# body' })
+  const renamed = await renameEntry(fs, 'C:/notes', 'before.md', 'after.md', {})
+  assert.deepEqual(renamed, { path: 'after.md', from: 'before.md', kind: 'file' })
+  assert.equal(fs.moves.length, 1)
+  assert.equal(fs.moves[0].from, 'C:/notes/before.md')
+  assert.equal(fs.moves[0].to, 'C:/notes/after.md')
+  assert.deepEqual(fs.moves[0].options, { expectedDestination: { kind: 'createIfAbsent' } })
+  assert.deepEqual(fs.moves[0].sandboxPolicy, {
+    mode: 'workspace-write',
+    workspaceRoot: 'C:/notes',
+    additionalWritableRoots: ['C:/notes'],
+  })
+  assert.equal(await fs.readText({ targetKey: 'C:/notes/after.md' }), '# body')
+})
+
+test('renameEntry refuses a destination that is already taken', async () => {
+  const fs = fakeFs({ 'C:/notes/a.md': '# a', 'C:/notes/b.md': '# b' })
+  await assert.rejects(
+    () => renameEntry(fs, 'C:/notes', 'a.md', 'b.md', {}),
+    (error) => error.code === 'notes/exists',
+  )
+  assert.equal(fs.moves.length, 0, 'a refused rename must not move anything')
+})
+
+test('renameEntry refuses a missing source and a missing destination folder', async () => {
+  const fs = fakeFs({ 'C:/notes/a.md': '# a' })
+  await assert.rejects(
+    () => renameEntry(fs, 'C:/notes', 'gone.md', 'next.md', {}),
+    (error) => error.code === 'notes/not-found',
+  )
+  await assert.rejects(
+    () => renameEntry(fs, 'C:/notes', 'a.md', 'missing/next.md', {}),
+    (error) => error.code === 'notes/not-found',
+  )
+  assert.equal(fs.moves.length, 0)
+})
+
+test('renameEntry refuses the same name and a non-Markdown target', async () => {
+  const fs = fakeFs({ 'C:/notes/a.md': '# a' })
+  await assert.rejects(
+    () => renameEntry(fs, 'C:/notes', 'a.md', 'a.md', {}),
+    (error) => error.code === 'notes/bad-relative-path',
+  )
+  await assert.rejects(
+    () => renameEntry(fs, 'C:/notes', 'a.md', 'a.txt', {}),
+    (error) => error.code === 'notes/not-markdown',
+  )
+  assert.equal(fs.moves.length, 0)
+})
+
+test('renameEntry reports a copy that could not remove its source', async () => {
+  // `fs.moveFile` may degrade to copy-then-delete; a leftover source would make
+  // the same note appear twice, so that is a failure, not a partial success.
+  const fs = fakeFs({ 'C:/notes/a.md': '# a' })
+  const original = fs.moveFile
+  fs.moveFile = (source, destination, moveOptions, signal, sandboxPolicy) =>
+    original(source, destination, { ...moveOptions, copyOnly: true }, signal, sandboxPolicy)
+  await assert.rejects(
+    () => renameEntry(fs, 'C:/notes', 'a.md', 'b.md', {}),
+    (error) => error.code === 'notes/not-removed',
+  )
+  assert.equal(fs.moves.length, 1)
+  assert.equal(await fs.readText({ targetKey: 'C:/notes/a.md' }), '# a', 'the source is kept when the move only copied')
+})
+
+test('renameEntry renames a folder through the injected rename', async () => {
+  const fs = fakeFs({ 'C:/notes/old/keep.md': '# keep' }, { directories: ['C:/notes', 'C:/notes/old'] })
+  const calls = []
+  const renamed = await renameEntry(fs, 'C:/notes', 'old', 'new', {
+    rename: async (from, to) => {
+      calls.push([from, to])
+      fs.directories.delete(from)
+      fs.directories.add(to)
+    },
+  })
+  assert.deepEqual(renamed, { path: 'new', from: 'old', kind: 'directory' })
+  assert.deepEqual(calls, [['C:/notes/old', 'C:/notes/new']])
+  assert.equal(fs.moves.length, 0, 'a folder never goes through moveFile')
 })

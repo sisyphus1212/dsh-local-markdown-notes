@@ -39,6 +39,8 @@ const SURFACE = [
   ['gitDiff', ['projectId', 'relativePath', 'signal']],
   ['gitBlame', ['projectId', 'relativePath', 'line', 'signal']],
   ['createEntry', ['projectId', 'relativePath', 'kind', 'signal']],
+  ['deleteEntry', ['projectId', 'relativePath', 'signal']],
+  ['renameEntry', ['projectId', 'fromPath', 'toPath', 'signal']],
   ['searchNotes', ['projectId', 'query', 'signal']],
 ]
 
@@ -47,7 +49,7 @@ test('contract exports the notes package identity', () => {
   assert.equal(NAMESPACE, 'notes')
 })
 
-test('remoteMarkers lists exactly the eleven wire methods', () => {
+test('remoteMarkers lists exactly the thirteen wire methods', () => {
   assert.deepEqual(
     remoteMarkers().map((marker) => marker.method),
     SURFACE.map(([method]) => method),

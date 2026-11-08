@@ -386,7 +386,7 @@ test('client apply registers the locale dictionary, style, remote mount and both
 
   assert.equal(record.mounts.length, 1)
   assert.equal(record.mounts[0].package, '@local/local-markdown-notes')
-  assert.equal(record.mounts[0].descriptors.length, 11)
+  assert.equal(record.mounts[0].descriptors.length, 13)
 
   assert.deepEqual([...record.injected], ['sidebar.panellist', 'main'])
   assert.equal(record.slots.length, 2)
@@ -549,6 +549,8 @@ test('every mounted descriptor uses a strict codec on parameters and result', as
       'gitDiff',
       'gitBlame',
       'createEntry',
+      'deleteEntry',
+      'renameEntry',
       'searchNotes',
     ],
   )

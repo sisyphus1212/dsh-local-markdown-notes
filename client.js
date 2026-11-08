@@ -236,8 +236,19 @@ const NOTES_SOURCE = 'local-notes'
 /* Editing shows line numbers; the preview deliberately does not, because
    rendered Markdown has no source lines to point at. */
 .lmn-code{flex:1;min-height:0;display:flex;min-width:0}
-.lmn-gutter{flex:0 0 auto;min-width:34px;overflow:hidden;padding:14px 10px 24px 0;text-align:right;color:var(--dsw-alias-label-tertiary,#81858c);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;user-select:none;-webkit-user-select:none;cursor:default}
-.lmn-gutter-line{height:20px;line-height:20px}
+.lmn-gutter{flex:0 0 auto;overflow:hidden;padding:14px 8px 24px 0;color:var(--dsw-alias-label-tertiary,#81858c);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;user-select:none;-webkit-user-select:none;cursor:default}
+/* One row is a 3px change bar plus the number. The bar keeps its width when
+   there is nothing to draw, so line numbers never shift as marks come and go. */
+.lmn-gutter-line{display:flex;align-items:stretch;height:20px;line-height:20px}
+.lmn-gutter-mark{flex:0 0 3px;width:3px;margin-right:6px;border-radius:1px;background:transparent}
+.lmn-gutter-num{flex:0 0 auto;min-width:22px;text-align:right}
+/* VS Code Light+ diff colours; the two dark blocks below carry Dark+. */
+.lmn-gutter-mark.is-added{background:#81b88b}
+.lmn-gutter-mark.is-modified{background:#1b81a8}
+.lmn-gutter-mark.is-deleted{background:#ca4b51}
+body[data-ds-dark-theme] .lmn-gutter-mark.is-added{background:#81b88b}
+body[data-ds-dark-theme] .lmn-gutter-mark.is-modified{background:#4b91e2}
+body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
 /* A bare hit strip above the bottom pane. The visible rule stays on the pane
    itself, so the splitter only has to be grabbable, not painted. */
 .lmn-splitter{flex:0 0 auto;height:6px;margin-bottom:-1px;cursor:row-resize;background:transparent;touch-action:none}
@@ -319,6 +330,9 @@ body:not([data-ds-light-theme]) .lmn-tok-function,body:not([data-ds-light-theme]
 body:not([data-ds-light-theme]) .lmn-tok-string{color:#CE9178}
 body:not([data-ds-light-theme]) .lmn-tok-number{color:#B5CEA8}
 body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
+body:not([data-ds-light-theme]) .lmn-gutter-mark.is-added{background:#81b88b}
+body:not([data-ds-light-theme]) .lmn-gutter-mark.is-modified{background:#4b91e2}
+body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 }
 /* Markdown structure painted in the editor mirror. These use alias tokens, so
    they follow the theme without a second dark block. */
@@ -576,6 +590,95 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       if (kind === 'directory') return trimmed
       return /\.md$/i.test(trimmed) ? trimmed : `${trimmed}.md`
     }
+
+    /**
+     * Turn one file's unified diff into the per-line marks the gutter paints.
+     *
+     * Only the hunk headers are trusted for structure: a Markdown body may
+     * legitimately contain a line that reads `---` or `+++`, so treating those
+     * two prefixes as headers would mis-read the file's own content as a diff
+     * boundary. Each `@@ -a,b +c,d @@` therefore switches into a counted mode
+     * where exactly `b` old lines and `d` new lines are consumed, and nothing
+     * outside that window can influence the result.
+     *
+     * A run of removals followed by a run of additions is the shape a changed
+     * line takes, so the first `min(removed, added)` new lines are reported as
+     * modified and only the surplus as added. Removals with no surviving line
+     * have nowhere of their own to sit, so they are anchored to the line above
+     * the block, which is where an editor draws a deletion marker.
+     */
+    function parseDiffDecorations(text) {
+      const added = new Set()
+      const modified = new Set()
+      const deleted = new Set()
+      const lines = String(text ?? '').split('\n')
+      const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+
+      let newLine = 0
+      let oldRemain = 0
+      let newRemain = 0
+      let inside = false
+      let removed = 0
+      let arrived = []
+
+      const flush = () => {
+        if (removed > 0 || arrived.length > 0) {
+          const pairs = Math.min(removed, arrived.length)
+          for (let index = 0; index < pairs; index += 1) modified.add(arrived[index])
+          for (let index = pairs; index < arrived.length; index += 1) added.add(arrived[index])
+          if (removed > pairs) {
+            const anchor = arrived.length > 0 ? arrived[0] : newLine
+            deleted.add(Math.max(1, anchor - 1))
+          }
+        }
+        removed = 0
+        arrived = []
+      }
+
+      for (const line of lines) {
+        const head = HUNK.exec(line)
+        if (head !== null) {
+          flush()
+          oldRemain = head[2] === undefined ? 1 : Number(head[2])
+          newRemain = head[4] === undefined ? 1 : Number(head[4])
+          newLine = Number(head[3])
+          inside = oldRemain > 0 || newRemain > 0
+          continue
+        }
+        if (!inside) continue
+        if (line === '' || line.startsWith('\\')) continue
+
+        const kind = line[0]
+        if (kind === '-') {
+          removed += 1
+          oldRemain -= 1
+        } else if (kind === '+') {
+          arrived.push(newLine)
+          newLine += 1
+          newRemain -= 1
+        } else if (kind === ' ') {
+          flush()
+          newLine += 1
+          oldRemain -= 1
+          newRemain -= 1
+        } else {
+          // A prefix this parser does not model: stop rather than guess.
+          flush()
+          inside = false
+          continue
+        }
+        if (oldRemain <= 0 && newRemain <= 0) {
+          flush()
+          inside = false
+        }
+      }
+      flush()
+
+      return { added, modified, deleted }
+    }
+
+    /** One shared "nothing changed" value, so an unchanged file never re-renders. */
+    const EMPTY_MARKS = { added: new Set(), modified: new Set(), deleted: new Set() }
 
     // --- Markdown renderer -------------------------------------------------
     // The preview is built from React elements, never from HTML strings, so a
@@ -1417,6 +1520,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       const [diffPath, setDiffPath] = React.useState(null)
       const [blame, setBlame] = React.useState(null)
       const [lineEntry, setLineEntry] = React.useState(null)
+      const [marks, setMarks] = React.useState(EMPTY_MARKS)
       const [viewTarget, setViewTarget] = React.useState('')
       const [searchQuery, setSearchQuery] = React.useState('')
       const [searchResult, setSearchResult] = React.useState(null)
@@ -1512,6 +1616,30 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         [api, report],
       )
 
+      /**
+       * Recompute the gutter marks for one file from its working-tree diff.
+       *
+       * The diff is the only authority on which lines are new or changed, and
+       * it compares the file on disk against `HEAD`. A file whose diff cannot
+       * be read simply carries no marks: a decoration is a hint, never a
+       * reportable failure, so this never surfaces an error banner.
+       */
+      const refreshMarks = React.useCallback(
+        async (target, relative) => {
+          if (target === null || typeof relative !== 'string' || relative === '') {
+            setMarks(EMPTY_MARKS)
+            return
+          }
+          try {
+            const value = await api.gitDiff(target.id, relative)
+            setMarks(parseDiffDecorations(value?.diff ?? ''))
+          } catch {
+            setMarks(EMPTY_MARKS)
+          }
+        },
+        [api],
+      )
+
       const openProject = React.useCallback(
         async (target, options = {}) => {
           // Restoring a session re-opens the project the user already had; it
@@ -1523,6 +1651,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             setDraft('')
             setBlame(null)
             setLineEntry(null)
+            setMarks(EMPTY_MARKS)
             setDiff(null)
             setDiffPath(null)
             setNotice(null)
@@ -1577,6 +1706,9 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             session.draft = carried === null ? value.content : carried
             session.dirty = carried !== null
             writeStoredSession()
+            // The gutter marks describe the file on disk against HEAD, so they
+            // are refreshed after every read, never derived from the buffer.
+            await refreshMarks(target, value.path)
             return true
           } catch (caught) {
             if (restoring) {
@@ -1590,7 +1722,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             setBusy(null)
           }
         },
-        [api, report],
+        [api, refreshMarks, report],
       )
 
       const save = React.useCallback(async () => {
@@ -1608,7 +1740,10 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           session.draft = value.content
           session.dirty = false
           writeStoredSession()
+          // Saving rewrites the disk copy, which is exactly what the diff
+          // compares against HEAD, so the marks are stale until re-read.
           await refreshStatus(project)
+          await refreshMarks(project, value.path)
         } catch (caught) {
           if (caught?.code === 'FS_STALE_VERSION' || caught?.code === 'notes/stale') {
             setNotice('panel.staleTitle')
@@ -1617,7 +1752,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         } finally {
           setBusy(null)
         }
-      }, [api, draft, file, project, refreshStatus, report])
+      }, [api, draft, file, project, refreshMarks, refreshStatus, report])
 
       /**
        * Come back to whatever the user had open.
@@ -2784,9 +2919,22 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
                       h(
                         'div',
                         { className: 'lmn-gutter', 'aria-hidden': 'true', ref: gutterRef },
-                        Array.from({ length: lineCount }, (_, index) =>
-                          h('div', { key: index, className: 'lmn-gutter-line' }, String(index + 1)),
-                        ),
+                        Array.from({ length: lineCount }, (_, index) => {
+                          const number = index + 1
+                          const mark = marks.added.has(number)
+                            ? ' is-added'
+                            : marks.modified.has(number)
+                              ? ' is-modified'
+                              : marks.deleted.has(number)
+                                ? ' is-deleted'
+                                : ''
+                          return h(
+                            'div',
+                            { key: index, className: 'lmn-gutter-line' },
+                            h('span', { className: `lmn-gutter-mark${mark}` }),
+                            h('span', { className: 'lmn-gutter-num' }, String(number)),
+                          )
+                        }),
                       ),
                       h(
                         'div',

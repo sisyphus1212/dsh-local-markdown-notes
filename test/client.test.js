@@ -805,6 +805,9 @@ function treeNamespace(options = {}) {
     },
     async gitDiff(projectId, relativePath) {
       calls.push(['gitDiff', projectId, relativePath])
+      if (options.diffFails === true) {
+        throw Object.assign(new Error('git diff failed'), { code: 'notes/git-failed' })
+      }
       return { ok: true, value: diff ?? { diff: '', note: 'no-commits' } }
     },
     async gitBlame(projectId, relativePath, line) {
@@ -1920,8 +1923,135 @@ test('scrolling the text carries the gutter with it', async () => {
 })
 
 // ---------------------------------------------------------------------------
-// Edit-time colour: a mirrored layer paints the text the textarea shows
+// Gutter marks: the diff against HEAD is drawn beside the line numbers
 // ---------------------------------------------------------------------------
+
+/** The change bar class of every gutter row, in line order. */
+function gutterMarks(panel) {
+  const gutter = findOne(panel.runtime.tree(), 'lmn-gutter')
+  assert.ok(gutter, 'the gutter renders')
+  return findAll(gutter, 'lmn-gutter-mark').map((mark) =>
+    String(mark.props.className).replace('lmn-gutter-mark', '').trim(),
+  )
+}
+
+/** Open 常用命令.md with the given unified diff behind gitDiff. */
+async function openWithDiff(text) {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    diff: { diff: text },
+  })
+  const panel = await mountPanel({ namespace })
+  const { gutter } = await openWithGutter(panel)
+  assert.deepEqual(
+    findAll(gutter, 'lmn-gutter-num').map((num) => textsOf(num)),
+    ['1', '2', '3', '4'],
+    'the numbers stay in their own column, untouched by the marks',
+  )
+  return { panel, calls }
+}
+
+test('an added line carries the added bar and its neighbours stay blank', async () => {
+  // The file on disk is one/two/three/ + a fourth line that is not in HEAD.
+  const { panel } = await openWithDiff(
+    [
+      'diff --git a/常用命令.md b/常用命令.md',
+      'index 1111111..2222222 100644',
+      '--- a/常用命令.md',
+      '+++ b/常用命令.md',
+      '@@ -1,3 +1,4 @@',
+      ' one',
+      ' two',
+      ' three',
+      '+four',
+      '',
+    ].join('\n'),
+  )
+
+  assert.deepEqual(gutterMarks(panel), ['', '', '', 'is-added'], 'only the new line is marked')
+})
+
+test('a rewritten line is marked as modified rather than added', async () => {
+  const { panel } = await openWithDiff(
+    [
+      'diff --git a/常用命令.md b/常用命令.md',
+      '--- a/常用命令.md',
+      '+++ b/常用命令.md',
+      '@@ -1,3 +1,3 @@',
+      ' one',
+      '-two',
+      '+TWO',
+      ' three',
+      '',
+    ].join('\n'),
+  )
+
+  assert.deepEqual(
+    gutterMarks(panel),
+    ['', 'is-modified', '', ''],
+    'the replacement sits on the line it replaced, not beside it',
+  )
+})
+
+test('a removed line with no replacement marks the line above it', async () => {
+  const { panel } = await openWithDiff(
+    [
+      'diff --git a/常用命令.md b/常用命令.md',
+      '--- a/常用命令.md',
+      '+++ b/常用命令.md',
+      '@@ -1,3 +1,2 @@',
+      ' one',
+      '-two',
+      ' three',
+      '',
+    ].join('\n'),
+  )
+
+  assert.deepEqual(
+    gutterMarks(panel),
+    ['is-deleted', '', '', ''],
+    'a deletion has no line of its own, so it is drawn where the gap opens',
+  )
+})
+
+test('a markdown line that reads like a diff header is still counted as content', async () => {
+  // `---` is front-matter in the note, so the diff line removing it is `----`.
+  // Reading that as the `--- a/…` header would abandon the hunk and lose the mark.
+  const { panel } = await openWithDiff(
+    [
+      'diff --git a/常用命令.md b/常用命令.md',
+      '--- a/常用命令.md',
+      '+++ b/常用命令.md',
+      '@@ -1,3 +1,2 @@',
+      ' title: x',
+      '----',
+      ' date: y',
+      '',
+    ].join('\n'),
+  )
+
+  assert.deepEqual(gutterMarks(panel), ['is-deleted', '', '', ''], 'the removed separator is counted')
+})
+
+test('an unreadable diff leaves the gutter plain instead of reporting a failure', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    diffFails: true,
+  })
+  const panel = await mountPanel({ namespace })
+  const { gutter } = await openWithGutter(panel)
+
+  assert.deepEqual(
+    findAll(gutter, 'lmn-gutter-mark').map((mark) => String(mark.props.className)),
+    ['lmn-gutter-mark', 'lmn-gutter-mark', 'lmn-gutter-mark', 'lmn-gutter-mark'],
+    'no mark is drawn',
+  )
+  assert.ok(
+    !textsOf(findOne(panel.runtime.tree(), 'lmn-error') ?? { props: {}, children: [] }).includes('git'),
+    'a decoration is a hint: a failed diff never becomes an error banner',
+  )
+})
+
 
 test('the colour layer reproduces the draft one line at a time', async () => {
   const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })

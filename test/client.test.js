@@ -297,7 +297,7 @@ function fakeStorage(seed) {
  * real sequencing: `remote.notes` only exists once the mount has resolved.
  */
 function fakeCtx(options = {}) {
-  const { mountFails = null, namespace = undefined } = options
+  const { mountFails = null, namespace = undefined, inputTriggers = undefined } = options
   const record = {
     effects: [],
     locales: [],
@@ -305,6 +305,7 @@ function fakeCtx(options = {}) {
     mounts: [],
     injected: [],
     unmounts: 0,
+    sources: [],
   }
 
   const ctx = {
@@ -341,6 +342,7 @@ function fakeCtx(options = {}) {
       },
     },
     get(name) {
+      if (name === 'inputTriggers') return inputTriggers
       return name === 'remote.notes' ? namespace : undefined
     },
   }
@@ -2568,4 +2570,178 @@ test('a failed search reports the error instead of an empty result', async () =>
   const tree = panel.runtime.tree()
   assert.ok(findOne(tree, 'lmn-error'), 'the failure surfaces as an error')
   assert.equal(findAll(tree, 'lmn-hit').length, 0, 'no stale hits are shown')
+})
+
+// ---------------------------------------------------------------------------
+// The `@` notes source
+// ---------------------------------------------------------------------------
+
+/** A stand-in for the host roster: it only has to record the sources handed to it. */
+function fakeInputTriggers() {
+  const sources = []
+  return {
+    sources,
+    registerSource(source) {
+      sources.push(source)
+      return () => {
+        const index = sources.indexOf(source)
+        if (index >= 0) sources.splice(index, 1)
+      }
+    },
+  }
+}
+
+/** Apply the plugin against an optional roster and hand back what it registered. */
+async function applyWithTriggers(options = {}) {
+  const { namespace, inputTriggers } = options
+  const client = loadClient()
+  const { ctx, record } = fakeCtx({ namespace, inputTriggers })
+  await client.plugin.apply(ctx)
+  return { client, record, sources: inputTriggers === undefined ? [] : inputTriggers.sources }
+}
+
+const NOTES_TREE = {
+  '': [
+    { path: '常用命令.md', name: '常用命令.md', type: 'file' },
+    { path: '笔记', name: '笔记', type: 'directory' },
+  ],
+  笔记: [{ path: '笔记/子目录', name: '子目录', type: 'directory' }],
+  '笔记/子目录': [{ path: '笔记/子目录/deep.md', name: 'deep.md', type: 'file' }],
+}
+
+test('a host without the optional @ roster still mounts the panel, with no source', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [] } })
+  const { record } = await applyWithTriggers({ namespace })
+
+  assert.equal(record.mounts.length, 1, 'the Remote still mounts')
+  assert.deepEqual(
+    record.slots.map((slot) => slot.options.name),
+    ['sidebar.panellist', 'main'],
+  )
+  assert.ok(
+    !record.effects.some((effect) => effect.label === 'local-markdown-notes: @ notes source'),
+    'nothing is registered when the host has no inputTriggers service',
+  )
+})
+
+test('a present @ roster receives exactly one stable local-notes source', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [] } })
+  const triggers = fakeInputTriggers()
+  const { sources } = await applyWithTriggers({ namespace, inputTriggers: triggers })
+
+  assert.equal(sources.length, 1, 'one source is registered')
+  const [source] = sources
+  assert.equal(source.trigger, '@')
+  assert.equal(source.name, 'local-notes')
+  assert.equal(source.order, 40, 'it sorts after the host file source instead of displacing it')
+  assert.equal(source.showGroupTitle, false)
+  assert.equal(typeof source.candidates, 'function')
+  assert.equal(typeof source.onPick, 'function')
+  assert.equal(typeof source.codec.serialize, 'function')
+  assert.equal(typeof source.codec.clipboardText, 'function')
+})
+
+test('the @ source lists every note in the project and describes where it lives', async () => {
+  // A real Windows root, so the mention normalisation (backslashes to slashes)
+  // is the thing under test rather than the fixture's own escaping.
+  const rootPath = 'D:\\dpu 资料\\ovs学习'
+  const namespace = {
+    async listProjects() {
+      return { ok: true, value: { projects: [{ ...PROJECT, rootPath }] } }
+    },
+    async listEntries(projectId, relativePath) {
+      return { ok: true, value: { path: relativePath, entries: NOTES_TREE[relativePath] ?? [] } }
+    },
+  }
+  const triggers = fakeInputTriggers()
+  const { sources } = await applyWithTriggers({ namespace, inputTriggers: triggers })
+
+  const rows = await sources[0].candidates({}, { query: '' })
+  // client.js runs in a vm realm, so its arrays are not this realm's arrays:
+  // copy the names out before a strict deep compare.
+  assert.deepEqual(
+    Array.from(rows, (row) => row.name),
+    ['常用命令.md', 'deep.md'],
+    'notes from nested folders are flattened in, folders themselves are not offered',
+  )
+  assert.equal(rows[0].icon, 'file')
+  assert.equal(rows[0].section, 'local-markdown-notes:reference.section')
+  assert.equal(rows[0].description, 'ovs学习', 'a top-level note is described by its project')
+  assert.equal(rows[1].description, 'ovs学习/笔记/子目录', 'a nested note keeps its folder chain')
+
+  const first = JSON.parse(rows[0].value)
+  assert.equal(
+    first.ref,
+    '@"D:/dpu 资料/ovs学习/常用命令.md"',
+    'a path with spaces is quoted so the mention stays one token',
+  )
+  assert.equal(first.label, '常用命令.md')
+})
+
+test('a path without spaces is offered as a bare mention', async () => {
+  const namespace = {
+    async listProjects() {
+      return { ok: true, value: { projects: [{ id: 'p2', name: 'plain', rootPath: 'C:/notes/' }] } }
+    },
+    async listEntries(projectId, relativePath) {
+      const entries = relativePath === '' ? [{ path: 'a.md', name: 'a.md', type: 'file' }] : []
+      return { ok: true, value: { path: relativePath, entries } }
+    },
+  }
+  const triggers = fakeInputTriggers()
+  const { sources } = await applyWithTriggers({ namespace, inputTriggers: triggers })
+
+  const [row] = await sources[0].candidates({}, { query: '' })
+  assert.equal(
+    JSON.parse(row.value).ref,
+    '@C:/notes/a.md',
+    'the trailing separator is not doubled and no quotes are added',
+  )
+})
+
+test('typing after @ filters the notes by path, case-insensitively', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: NOTES_TREE })
+  const triggers = fakeInputTriggers()
+  const { sources } = await applyWithTriggers({ namespace, inputTriggers: triggers })
+
+  const rows = await sources[0].candidates({}, { query: 'DEEP' })
+  assert.deepEqual([...rows].map((row) => row.name), ['deep.md'])
+
+  const misses = await sources[0].candidates({}, { query: 'nothing-matches' })
+  assert.equal(misses.length, 0, 'an unmatched query offers nothing rather than everything')
+})
+
+test('picking a note inserts a reference the composer can serialize', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: NOTES_TREE })
+  const triggers = fakeInputTriggers()
+  const { sources } = await applyWithTriggers({ namespace, inputTriggers: triggers })
+  const source = sources[0]
+
+  const [row] = await source.candidates({}, { query: '常用' })
+  const outcome = source.onPick({ candidate: row })
+  assert.equal(outcome.insert.source, 'local-notes', 'the chip routes back to this source')
+  assert.equal(outcome.insert.appearance, 'file')
+  assert.equal(outcome.insert.ref, JSON.parse(row.value).ref)
+  assert.equal(
+    outcome.insert.clipboardText,
+    outcome.insert.ref,
+    'the clipboard keeps the mention text, not the model form',
+  )
+
+  const serialized = source.codec.serialize(outcome.insert.ref, new AbortController().signal)
+  // The serialize promise is created in the vm realm, so it is not this realm's
+  // Promise; what submit requires is simply a thenable.
+  assert.equal(typeof serialized.then, 'function', 'serialize must be awaitable')
+  assert.equal(await serialized, outcome.insert.ref)
+})
+
+test('a corrupt candidate value yields no insertion instead of throwing', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: NOTES_TREE })
+  const triggers = fakeInputTriggers()
+  const { sources } = await applyWithTriggers({ namespace, inputTriggers: triggers })
+
+  const outcome = sources[0].onPick({ candidate: { value: 'not json' } })
+  assert.equal(outcome.text, '')
+  assert.equal(outcome.continue, false)
+  assert.equal(outcome.insert, undefined, 'nothing is inserted for an unreadable candidate')
 })

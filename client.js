@@ -7,6 +7,9 @@ window.__ModuleLoader__.load({
     const NS = 'local-markdown-notes'
     const PANEL_ID = 'local-markdown-notes'
     const SLOT_ORDER = 20
+// Name of the `@` source this plugin registers. It doubles as the serializer
+// routing key carried by every chip it inserts, so it must stay stable.
+const NOTES_SOURCE = 'local-notes'
 
     const ZH = {
       'panel.title': '本地笔记',
@@ -76,6 +79,7 @@ window.__ModuleLoader__.load({
       'panel.confirm': '确认',
       'panel.cancel': '取消',
       'panel.deletedNotice': '文件已删除',
+      'reference.section': '笔记',
     }
 
     const EN = {
@@ -146,6 +150,7 @@ window.__ModuleLoader__.load({
       'panel.confirm': 'Confirm',
       'panel.cancel': 'Cancel',
       'panel.deletedNotice': 'The file was deleted.',
+      'reference.section': 'Notes',
     }
 
     const STYLE = `
@@ -2939,6 +2944,117 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       )
     }
 
+    /** Absolute note path in the form the composer's mention parser accepts. */
+    function noteMention(rootPath, relativePath) {
+      const absolute = `${rootPath.replace(/[\\/]+$/u, '')}/${relativePath}`.replace(/\\/gu, '/')
+      // A mention ends at whitespace, so a path holding any must be quoted. The
+      // closing quote is included because a note is a leaf: directory mentions
+      // deliberately leave it out to keep drilling.
+      return /\s/u.test(absolute) ? `@"${absolute}"` : `@${absolute}`
+    }
+
+    /**
+     * The `@` source that lets a note be inserted into any composer.
+     *
+     * It reuses the panel's own `listProjects`/`listEntries` facade rather than
+     * re-reading the filesystem, so the menu can never list a folder the panel
+     * does not show. References are absolute: the composer resolves mentions
+     * against the session's working directory, which is the agent workspace and
+     * not the imported folder.
+     */
+    function buildNotesSource(api, t) {
+      // A flat note list is useless past a few hundred rows and this walk is on
+      // the composer's keystroke path, so it stops early rather than growing
+      // with the folder.
+      const MAX_NOTES = 400
+      // The menu is a jumping-off point, not a browser: once a query has this
+      // many matches the extra rows only make it harder to reach the one wanted.
+      const MAX_ROWS = 50
+
+      async function walk(project, relativePath, notes, signal) {
+        if (notes.length >= MAX_NOTES || signal?.aborted === true) return
+        let listing
+        try {
+          listing = await api.listEntries(project.id, relativePath)
+        } catch (error) {
+          // One unreadable folder must not hide the rest of the project.
+          return
+        }
+        for (const entry of listing.entries ?? []) {
+          if (notes.length >= MAX_NOTES || signal?.aborted === true) return
+          if (entry.type === 'directory') await walk(project, entry.path, notes, signal)
+          else notes.push({ project, path: entry.path, name: entry.name })
+        }
+      }
+
+      async function candidates(_projection, request) {
+        const query = (request?.query ?? '').trim().toLowerCase()
+        const signal = request?.signal
+        let projects
+        try {
+          projects = (await api.listProjects()).projects ?? []
+        } catch (error) {
+          return []
+        }
+        const notes = []
+        for (const project of projects) {
+          await walk(project, '', notes, signal)
+          if (notes.length >= MAX_NOTES) break
+        }
+        const rows = []
+        for (const note of notes) {
+          if (signal?.aborted === true) return []
+          const path = note.path.toLowerCase()
+          if (query !== '' && !path.includes(query) && !note.name.toLowerCase().includes(query)) continue
+          const parent = note.path.includes('/') ? note.path.slice(0, note.path.lastIndexOf('/')) : ''
+          rows.push({
+            name: note.name,
+            // The folder disambiguates same-named notes; the project name keeps
+            // it readable once several folders are imported.
+            description: parent === '' ? note.project.name : `${note.project.name}/${parent}`,
+            icon: 'file',
+            section: t('reference.section'),
+            value: JSON.stringify({ ref: noteMention(note.project.rootPath, note.path), label: note.name }),
+          })
+          if (rows.length >= MAX_ROWS) break
+        }
+        return rows
+      }
+
+      return {
+        trigger: '@',
+        name: NOTES_SOURCE,
+        // Sorted after the host's own `reference` source (order 0), so a note
+        // never displaces the session's files at the top of the menu.
+        order: 40,
+        showGroupTitle: false,
+        candidates,
+        onPick({ candidate }) {
+          let picked
+          try {
+            picked = JSON.parse(candidate.value)
+          } catch (error) {
+            return { text: '', continue: false }
+          }
+          return {
+            insert: {
+              source: NOTES_SOURCE,
+              ref: picked.ref,
+              label: picked.label,
+              appearance: 'file',
+              clipboardText: picked.ref,
+            },
+          }
+        },
+        codec: {
+          clipboardText: (ref) => ref,
+          // Must be a Promise: the composer rejects a reference whose source has
+          // no serializer, and a non-thenable would throw at submit time.
+          serialize: (ref) => Promise.resolve(ref),
+        },
+      }
+    }
+
     return {
       inject: ['slots', 'locale', 'remote'],
       async apply(ctx) {
@@ -2977,6 +3093,16 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         )
 
         const api = createApi(ctx)
+
+        // The `@` menu is an optional host capability: probe it instead of
+        // injecting, so the plugin still mounts on a host without it.
+        const inputTriggers = ctx.get('inputTriggers')
+        if (inputTriggers !== undefined) {
+          ctx.effect(
+            () => inputTriggers.registerSource(buildNotesSource(api, t)),
+            'local-markdown-notes: @ notes source',
+          )
+        }
 
         ctx.effect(
           () =>

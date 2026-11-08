@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Browse and edit local Markdown notes folders with Git history.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sisyphus1212/dsh-local-markdown-notes.git"
+  },
+  "homepage": "https://github.com/sisyphus1212/dsh-local-markdown-notes#readme",
   "main": "index.js",
   "exports": {
     ".": "./index.js",

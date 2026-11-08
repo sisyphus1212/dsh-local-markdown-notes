@@ -59,6 +59,9 @@ function loadClient(options = {}) {
   }
 
   const sandbox = { window, document, console: consoleDouble, setTimeout, clearTimeout }
+  // Absent by default: the panel must cope with a runtime that has no
+  // `localStorage` at all, which is what the Node tests already prove.
+  if (options.localStorage !== undefined) sandbox.localStorage = options.localStorage
   sandbox.globalThis = sandbox
   vm.runInNewContext(source, sandbox, { filename: 'client.js' })
 
@@ -149,6 +152,22 @@ function createHookRuntime() {
       root = component
       render()
     },
+    /**
+     * Drop every hook slot, the way unmounting a keyed slot drops the component.
+     *
+     * The module keeps its own scope, and client.js resolves `React` once at
+     * load time, so a faithful remount cannot come from a second hooks runtime:
+     * it has to be this one, emptied. Afterwards the next `mount` re-registers
+     * every hook, so all effects run again from their initial state.
+     */
+    reset() {
+      slots.length = 0
+      cursor = 0
+      root = null
+      tree = null
+      initialEffects.length = 0
+      scheduled = false
+    },
     /** Current element tree. */
     tree() {
       return tree
@@ -223,9 +242,9 @@ function textsOf(node) {
 
 /** Mount the panel with a stateful runtime and a working fake namespace. */
 async function mountPanel(options) {
-  const { namespace, timers = true } = options
+  const { namespace, timers = true, localStorage } = options
   const runtime = createHookRuntime()
-  const client = loadClient({ react: runtime.react })
+  const client = loadClient({ react: runtime.react, localStorage })
   const { ctx, record } = fakeCtx({ namespace })
   await client.plugin.apply(ctx)
 
@@ -237,7 +256,38 @@ async function mountPanel(options) {
   runtime.mount(() => main.component({ api, t }))
   await runtime.flush()
 
-  return { ...client, runtime, record, ctx, api, t, timerQueue }
+  return { ...client, runtime, record, ctx, api, t, timerQueue, component: main.component }
+}
+
+/**
+ * A second mount of the panel module, the way a keyed slot produces one.
+ *
+ * Switching the sidebar to another entry and back tears the component down
+ * together with every `useState` in it; only the module scope survives. The
+ * hooks runtime is therefore emptied rather than replaced — client.js resolves
+ * `React` once at load time, so a second runtime would never see the module.
+ */
+async function remount(panel) {
+  panel.runtime.reset()
+  panel.runtime.mount(() => panel.component({ api: panel.api, t: panel.t }))
+  await panel.runtime.flush()
+  return panel
+}
+
+/** A stand-in for the browser store: a Map with the two methods the panel uses. */
+function fakeStorage(seed) {
+  const data = new Map(Object.entries(seed ?? {}))
+  return {
+    getItem: (key) => (data.has(key) ? data.get(key) : null),
+    setItem: (key, value) => void data.set(key, String(value)),
+    removeItem: (key) => void data.delete(key),
+    /** What the panel last wrote, parsed, for assertions. */
+    stored(key) {
+      if (!data.has(key)) return null
+      return JSON.parse(data.get(key))
+    },
+    keys: () => [...data.keys()],
+  }
 }
 
 /**
@@ -690,6 +740,9 @@ function treeNamespace(options = {}) {
     },
     async readFile(projectId, relativePath) {
       calls.push(['readFile', projectId, relativePath])
+      if ((options.unreadable ?? []).includes(relativePath)) {
+        throw Object.assign(new Error(`no such file ${relativePath}`), { code: 'notes/enoent' })
+      }
       return { ok: true, value: { path: relativePath, version: 'v1', content: 'one\ntwo\nthree\n' } }
     },
     async writeFile() {
@@ -2225,3 +2278,168 @@ test('highlighted source can never become executable markup', async () => {
   )
 })
 
+
+// ---------------------------------------------------------------------------
+// Coming back to the file that was open
+// ---------------------------------------------------------------------------
+
+/** The single file the restore tests open, with content long enough for blame. */
+const ONE_FILE = { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] }
+
+/** Open the project row and then the one file in it. */
+async function openTheFile(panel) {
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+}
+
+/** The textarea of the editor currently on screen. */
+function editorTextarea(panel) {
+  const editor = findOne(panel.runtime.tree(), 'lmn-editor')
+  assert.ok(editor, 'the editor renders')
+  const area = seekType(editor, 'textarea')
+  assert.ok(area, 'the editor renders a textarea')
+  return area
+}
+
+test('a remount comes back to the file, folder and view mode the user left', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+  assert.equal(editorTextarea(panel).props.value, 'one\ntwo\nthree\n', 'the file is open')
+
+  // Preview is not the default: only the remembered session can restore it.
+  const preview = findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1]
+  await click(panel.runtime, preview)
+
+  // Leaving the sidebar entry tears the component down; coming back mounts a
+  // brand-new one whose state is all initial values except the module session.
+  const back = await remount(panel)
+
+  const rows = findAll(back.runtime.tree(), 'lmn-row')
+  const fileRow = rows.find((item) => textsOf(item).includes('常用命令.md'))
+  assert.ok(fileRow, 'the file is listed again, so the folder came back expanded')
+  assert.ok(
+    String(fileRow.props.className).includes('is-selected'),
+    'the restored file is the one the tree marks as selected',
+  )
+
+  const seg = findAll(findOne(back.runtime.tree(), 'lmn-seg'), 'lmn-btn')
+  assert.equal(seg[1].props['aria-pressed'], 'true', 'the preview mode came back too')
+  assert.equal(seekType(findOne(back.runtime.tree(), 'lmn-editor'), 'textarea'), null, 'preview hides the textarea')
+  assert.ok(textsOf(findOne(back.runtime.tree(), 'lmn-render')).includes('one'), 'the restored draft is rendered')
+})
+
+test('unsaved typing survives a panel switch instead of reverting to the disk copy', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nedited\n' } })
+  await panel.runtime.flush()
+  assert.equal(editorTextarea(panel).props.value, 'one\ntwo\nedited\n', 'the draft holds the typing')
+
+  const back = await remount(panel)
+  assert.equal(
+    editorTextarea(back).props.value,
+    'one\ntwo\nedited\n',
+    'the unsaved buffer is what comes back, not the file on disk',
+  )
+  assert.ok(
+    textsOf(back.runtime.tree()).includes(`${NS}:panel.modifiedDirty`),
+    'and it is still flagged as unsaved, so the user knows to save it',
+  )
+})
+
+test('the session crosses a page reload through localStorage', async () => {
+  const storage = fakeStorage()
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace, localStorage: storage })
+  await openTheFile(panel)
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1])
+
+  const saved = storage.stored('local-markdown-notes:session')
+  assert.ok(saved, 'the panel writes its session to the store')
+  assert.equal(saved.projectId, 'p1', 'the project id is stored')
+  assert.equal(saved.filePath, '常用命令.md', 'the open file is stored')
+  assert.equal(saved.viewMode, 'preview', 'the view mode is stored')
+  assert.deepEqual(saved.openDirs, [], 'the root needs no entry: it is always expanded')
+
+  // A reload is a fresh module instance reading the same store back.
+  const reloaded = await mountPanel({ namespace, localStorage: storage })
+  const fileRow = findAll(reloaded.runtime.tree(), 'lmn-row').find((item) =>
+    textsOf(item).includes('常用命令.md'),
+  )
+  assert.ok(fileRow, 'the folder is expanded from the stored session')
+  assert.ok(String(fileRow.props.className).includes('is-selected'), 'the stored file is open again')
+  assert.equal(
+    findAll(findOne(reloaded.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1].props['aria-pressed'],
+    'true',
+    'the stored view mode is applied',
+  )
+})
+
+test('a stored file that no longer exists leaves a quiet hint and no spinner', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE, unreadable: ['gone.md'] })
+  // The session names a file the Host will refuse, which is what a rename or a
+  // delete between visits looks like.
+  const storage = fakeStorage({
+    'local-markdown-notes:session': JSON.stringify({
+      projectId: 'p1',
+      openDirs: [],
+      filePath: 'gone.md',
+      viewMode: 'edit',
+      bottomHeight: null,
+      tab: 'status',
+    }),
+  })
+  const panel = await mountPanel({ namespace, localStorage: storage })
+
+  const tree = panel.runtime.tree()
+  assert.equal(findOne(tree, 'lmn-editor'), undefined, 'nothing is shown as open')
+  assert.equal(findOne(tree, 'lmn-empty-center') !== undefined, true, 'the empty state explains what to do')
+  assert.equal(
+    seekType(findOne(tree, 'lmn-empty-center'), 'h3') !== null,
+    true,
+    'the empty state names the next step instead of an error',
+  )
+  assert.equal(findOne(tree, 'lmn-error'), undefined, 'a missing file is not an error banner')
+  assert.ok(
+    textsOf(tree).includes(`${NS}:panel.restoreMissing`),
+    'the toolbar says the file it remembered is gone',
+  )
+  assert.equal(
+    textsOf(tree).includes(`${NS}:panel.loading`),
+    false,
+    'nothing is left saying it is still loading',
+  )
+
+  const saved = storage.stored('local-markdown-notes:session')
+  assert.equal(saved.filePath, null, 'the dead path is dropped from the session')
+  assert.equal(saved.projectId, 'p1', 'the project is still remembered')
+})
+
+test('a project that left the registry is forgotten instead of half restored', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE })
+  const storage = fakeStorage({
+    'local-markdown-notes:session': JSON.stringify({
+      projectId: 'deleted-project',
+      openDirs: ['docs'],
+      filePath: 'docs/a.md',
+      viewMode: 'preview',
+      bottomHeight: 220,
+      tab: 'diff',
+    }),
+  })
+  const panel = await mountPanel({ namespace, localStorage: storage })
+
+  assert.equal(storage.keys().length, 0, 'the whole session is cleared, not repaired')
+  const tree = panel.runtime.tree()
+  assert.equal(findOne(tree, 'lmn-editor'), undefined, 'no stale file is opened')
+  assert.ok(
+    textsOf(tree).includes(`${NS}:panel.pickProject`),
+    'the remaining project is offered instead of a half-restored view',
+  )
+})

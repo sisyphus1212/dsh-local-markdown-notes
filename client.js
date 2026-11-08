@@ -59,6 +59,7 @@ window.__ModuleLoader__.load({
       'panel.preview': '预览',
       'panel.untitledName': '未命名',
       'panel.resize': '拖动调整下方面板高度',
+      'panel.restoreMissing': '上次打开的文件已经不在了，请从左侧重新选择。',
     }
 
     const EN = {
@@ -112,6 +113,7 @@ window.__ModuleLoader__.load({
       'panel.preview': 'Preview',
       'panel.untitledName': 'Untitled',
       'panel.resize': 'Drag to resize the bottom panel',
+      'panel.restoreMissing': 'The file you had open is gone. Pick another one on the left.',
     }
 
     const STYLE = `
@@ -1201,6 +1203,128 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       return blocks
     }
 
+    /**
+     * What the panel remembers about the last thing the user had open.
+     *
+     * The `main` slot is keyed by panel id, so switching to another sidebar
+     * entry tears this component down and every `useState` in it falls back to
+     * its initial value. Keeping the fields worth keeping in this module-scope
+     * object is what lets the panel come back to the same file instead of a
+     * blank page. The `localStorage` copy carries the same fields across a
+     * full page reload.
+     */
+    const SESSION_KEY = 'local-markdown-notes:session'
+    const VIEW_MODES = ['edit', 'preview']
+    const BOTTOM_TABS = ['status', 'diff', 'blame']
+
+    const session = {
+      projectId: null,
+      openDirs: [],
+      filePath: null,
+      viewMode: 'edit',
+      bottomHeight: null,
+      tab: 'status',
+      // An unsaved buffer and whether it differs from the file on disk. Only
+      // the in-memory copy carries these: a reload starts from disk again.
+      draft: null,
+      dirty: false,
+    }
+
+    let sessionHydrated = false
+
+    function storedViewMode(value) {
+      return VIEW_MODES.includes(value) ? value : 'edit'
+    }
+
+    function storedTab(value) {
+      return BOTTOM_TABS.includes(value) ? value : 'status'
+    }
+
+    function storedHeight(value) {
+      return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : null
+    }
+
+    /** The `openDirs` map a stored session describes, with the root expanded. */
+    function sessionOpenDirs(state) {
+      const next = {}
+      if (state.projectId === null) return next
+      next[treeKey(state.projectId, '')] = true
+      for (const relative of state.openDirs) next[treeKey(state.projectId, relative)] = true
+      return next
+    }
+
+    /**
+     * Read the cross-reload part of the session.
+     *
+     * `localStorage` is absent in the Node tests and a privacy-restricted
+     * browser throws on access instead of answering null, so both have to be
+     * handled: a broken store may never break editing.
+     */
+    function readStoredSession() {
+      try {
+        if (typeof localStorage === 'undefined') return null
+        const raw = localStorage.getItem(SESSION_KEY)
+        if (typeof raw !== 'string' || raw === '') return null
+        const parsed = JSON.parse(raw)
+        return parsed !== null && typeof parsed === 'object' ? parsed : null
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * Persist the lightweight fields. `children`, `diff`, `blame` and `status`
+     * are deliberately left out: they are rebuilt from the Host on restore.
+     */
+    function writeStoredSession() {
+      try {
+        if (typeof localStorage === 'undefined') return
+        localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({
+            projectId: session.projectId,
+            openDirs: session.openDirs,
+            filePath: session.filePath,
+            viewMode: session.viewMode,
+            bottomHeight: session.bottomHeight,
+            tab: session.tab,
+          }),
+        )
+      } catch {
+        // A full or blocked store must never interfere with editing.
+      }
+    }
+
+    /** Read the stored session once per page load, before the first render. */
+    function hydrateSession() {
+      if (sessionHydrated) return
+      sessionHydrated = true
+      const stored = readStoredSession()
+      if (stored === null) return
+      session.projectId = typeof stored.projectId === 'string' && stored.projectId !== '' ? stored.projectId : null
+      session.openDirs = Array.isArray(stored.openDirs)
+        ? stored.openDirs.filter((relative) => typeof relative === 'string')
+        : []
+      session.filePath = typeof stored.filePath === 'string' && stored.filePath !== '' ? stored.filePath : null
+      session.viewMode = storedViewMode(stored.viewMode)
+      session.bottomHeight = storedHeight(stored.bottomHeight)
+      session.tab = storedTab(stored.tab)
+    }
+
+    /** Forget everything, in memory and on disk. */
+    function clearSession() {
+      session.projectId = null
+      session.openDirs = []
+      session.filePath = null
+      session.draft = null
+      session.dirty = false
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(SESSION_KEY)
+      } catch {
+        // Same tolerance as the write path.
+      }
+    }
+
     function App({ api, t }) {
       const [projects, setProjects] = React.useState([])
       const [project, setProject] = React.useState(null)
@@ -1233,10 +1357,15 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       const refreshProjects = React.useCallback(async () => {
         try {
           const value = await api.listProjects()
-          setProjects(Array.isArray(value?.projects) ? value.projects : [])
+          const list = Array.isArray(value?.projects) ? value.projects : []
+          setProjects(list)
           setError(null)
+          // Returned so the restore path can resolve a stored id without
+          // waiting a render to read the state it just set.
+          return list
         } catch (caught) {
           report(caught)
+          return null
         }
       }, [api, report])
 
@@ -1263,6 +1392,8 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           const key = treeKey(target.id, relative)
           if (openDirs[key] === true) {
             setOpenDirs((current) => ({ ...current, [key]: false }))
+            session.openDirs = session.openDirs.filter((entry) => entry !== relative)
+            writeStoredSession()
             // A folded folder must not stay the destination for new entries:
             // the create box would write somewhere the user can no longer see.
             setViewTarget((current) =>
@@ -1272,6 +1403,10 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           }
           setOpenDirs((current) => ({ ...current, [key]: true }))
           setViewTarget(relative)
+          if (!session.openDirs.includes(relative)) {
+            session.openDirs = [...session.openDirs, relative]
+            writeStoredSession()
+          }
           // Lazy: only the first expand of a directory hits the Host.
           if (children[key] === undefined) await loadPath(target, relative)
         },
@@ -1295,22 +1430,29 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         [api, report],
       )
 
-      React.useEffect(() => {
-        void refreshProjects()
-      }, [refreshProjects])
-
       const openProject = React.useCallback(
-        async (target) => {
+        async (target, options = {}) => {
+          // Restoring a session re-opens the project the user already had; it
+          // must not wipe the file and draft the restore is about to put back.
+          const reset = options.reset !== false
           setProject(target)
-          setFile(null)
-          setDraft('')
-          setBlame(null)
-          setLineEntry(null)
-          setDiff(null)
-          setDiffPath(null)
-          setNotice(null)
-          setCreating(null)
-          setViewTarget('')
+          if (reset) {
+            setFile(null)
+            setDraft('')
+            setBlame(null)
+            setLineEntry(null)
+            setDiff(null)
+            setDiffPath(null)
+            setNotice(null)
+            setCreating(null)
+            setViewTarget('')
+            session.filePath = null
+            session.draft = null
+            session.dirty = false
+          }
+          session.projectId = target.id
+          session.openDirs = []
+          writeStoredSession()
           // Expanding the root is what makes the tree show anything: the root
           // node is the project itself, so '' is its directory.
           setOpenDirs((current) => ({ ...current, [treeKey(target.id, '')]: true }))
@@ -1320,20 +1462,43 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         [loadPath, refreshStatus],
       )
 
+      /**
+       * Load a file into the editor.
+       *
+       * `options.restore` is the session-restore path: an unsaved buffer the
+       * session still holds for this very file wins over the disk copy, so
+       * switching panels does not silently throw away typing. A failure there
+       * stays quiet — the user never asked for that file in the first place —
+       * and is reported as `false` so the caller can fall back to a blank page.
+       */
       const openFile = React.useCallback(
-        async (target, relative) => {
+        async (target, relative, options = {}) => {
+          const restoring = options.restore === true
           try {
             setBusy('read')
             const value = await api.readFile(target.id, relative)
             setFile({ path: value.path, version: value.version, content: value.content })
-            setDraft(value.content)
+            const carried = restoring && session.dirty && session.filePath === value.path ? session.draft : null
+            setDraft(carried === null ? value.content : carried)
             setBlame(null)
             setLineEntry(null)
             setNotice(null)
             setViewTarget(parentOf(value.path))
             setError(null)
+            session.projectId = target.id
+            session.filePath = value.path
+            session.draft = carried === null ? value.content : carried
+            session.dirty = carried !== null
+            writeStoredSession()
+            return true
           } catch (caught) {
-            report(caught)
+            if (restoring) {
+              setFile(null)
+              setDraft('')
+            } else {
+              report(caught)
+            }
+            return false
           } finally {
             setBusy(null)
           }
@@ -1350,6 +1515,12 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           setDraft(value.content)
           setNotice('panel.saved')
           setError(null)
+          // The buffer now matches the disk again, so a later panel switch must
+          // read the saved file rather than replay stale typing.
+          session.filePath = value.path
+          session.draft = value.content
+          session.dirty = false
+          writeStoredSession()
           await refreshStatus(project)
         } catch (caught) {
           if (caught?.code === 'FS_STALE_VERSION' || caught?.code === 'notes/stale') {
@@ -1360,6 +1531,76 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           setBusy(null)
         }
       }, [api, draft, file, project, refreshStatus, report])
+
+      /**
+       * Come back to whatever the user had open.
+       *
+       * This runs once per mount, and a mount happens every time the sidebar
+       * switches away and back, because the `main` slot is keyed. The module
+       * session survives that; a reload reads the same fields back out of
+       * `localStorage`. Every step here is best-effort: a project that was
+       * removed or a file that was renamed away leaves a blank editor with one
+       * readable line, never an error banner or a stuck spinner.
+       */
+      React.useEffect(() => {
+        let cancelled = false
+        void (async () => {
+          hydrateSession()
+          // Applied before the first paint of any restored content: they are
+          // pure view state and never depend on the Host answering.
+          setViewMode(session.viewMode)
+          setTab(session.tab)
+          if (session.bottomHeight !== null) setBottomHeight(session.bottomHeight)
+
+          const list = await refreshProjects()
+          if (cancelled) return
+          if (session.projectId === null) return
+
+          const target = (list ?? []).find((item) => item.id === session.projectId)
+          if (target === undefined) {
+            // The project is gone from the registry: start clean and quiet.
+            clearSession()
+            return
+          }
+
+          // Snapshot first: re-opening the project resets the write-back fields.
+          const openDirs = [...session.openDirs]
+          const filePath = session.filePath
+          await openProject(target, { reset: false })
+          if (cancelled) return
+
+          const directories = openDirs
+            .filter((relative) => typeof relative === 'string' && relative !== '')
+            // Shallow first, so a child folder is expanded inside a parent that
+            // is already on screen.
+            .sort((left, right) => left.split('/').length - right.split('/').length)
+          if (directories.length > 0) {
+            session.openDirs = directories
+            setOpenDirs(sessionOpenDirs(session))
+            for (const relative of directories) {
+              if (cancelled) return
+              await loadPath(target, relative)
+            }
+          }
+
+          if (filePath === null) {
+            writeStoredSession()
+            return
+          }
+          const restored = await openFile(target, filePath, { restore: true })
+          if (cancelled) return
+          if (!restored) {
+            session.filePath = null
+            session.draft = null
+            session.dirty = false
+            writeStoredSession()
+            setNotice('panel.restoreMissing')
+          }
+        })()
+        return () => {
+          cancelled = true
+        }
+      }, [refreshProjects, openProject, openFile, loadPath])
 
       const importFolder = React.useCallback(async () => {
         try {
@@ -1398,6 +1639,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
               setDiff(null)
               setDiffPath(null)
               setStatus(null)
+              clearSession()
             }
             await refreshProjects()
           } catch (caught) {
@@ -1920,6 +2162,10 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         resizeRef.current = null
         setResizing(false)
         event?.currentTarget?.releasePointerCapture?.(event.pointerId)
+        // The dragged height is part of what coming back should restore, but it
+        // is only worth a write once the pointer is released, not per pixel.
+        session.bottomHeight = bottomHeight
+        writeStoredSession()
       }
       const splitterProps = {
         role: 'separator',
@@ -2006,8 +2252,18 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
                           ref: codeAreaRef,
                           spellCheck: false,
                           onChange: (event) => {
-                            setDraft(event.target.value)
+                            const next = event.target.value
+                            setDraft(next)
                             setNotice(null)
+                            // Keep the unsaved buffer in the session so a panel
+                            // switch cannot throw away typing.
+                            if (file !== null) {
+                              session.projectId = project?.id ?? session.projectId
+                              session.filePath = file.path
+                              session.draft = next
+                              session.dirty = next !== (file.content ?? next)
+                              writeStoredSession()
+                            }
                           },
                           onScroll: syncGutterScroll,
                           onKeyUp: (event) => void onSelectLine(event),
@@ -2101,7 +2357,11 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
                 {
                   className: 'lmn-btn',
                   'aria-pressed': viewMode === 'edit' ? 'true' : 'false',
-                  onClick: () => setViewMode('edit'),
+                  onClick: () => {
+                    session.viewMode = 'edit'
+                    writeStoredSession()
+                    setViewMode('edit')
+                  },
                 },
                 t('panel.edit'),
               ),
@@ -2110,13 +2370,22 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
                 {
                   className: 'lmn-btn',
                   'aria-pressed': viewMode === 'preview' ? 'true' : 'false',
-                  onClick: () => setViewMode('preview'),
+                  onClick: () => {
+                    session.viewMode = 'preview'
+                    writeStoredSession()
+                    setViewMode('preview')
+                  },
                 },
                 t('panel.preview'),
               ),
             ),
             notice === 'panel.staleTitle' ? h('span', { className: 'lmn-note' }, t('panel.staleTitle')) : null,
             notice === 'panel.saved' ? h('span', { className: 'lmn-note' }, t('panel.saved')) : null,
+            // Said quietly next to the reload button rather than as an error
+            // banner: the session came back, only the file it named did not.
+            notice === 'panel.restoreMissing'
+              ? h('span', { className: 'lmn-note' }, t('panel.restoreMissing'))
+              : null,
             dirty ? h('span', { className: 'lmn-note' }, t('panel.modifiedDirty')) : null,
             h(
               'button',
@@ -2156,6 +2425,8 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
                     className: 'lmn-tab',
                     'aria-selected': tab === key ? 'true' : 'false',
                     onClick: () => {
+                      session.tab = key
+                      writeStoredSession()
                       setTab(key)
                       // Opening Diff with nothing loaded yet would show an empty pane
                       // forever; fetch once so the tab can explain itself.

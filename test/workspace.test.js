@@ -89,7 +89,7 @@ function fakeFs(initial, options = {}) {
       if (!files.has(key)) throw new Error(`ENOENT ${key}`)
       return files.get(key)
     },
-    async writeText(target, content, expected) {
+    async writeText(target, content, expected, signal, sandboxPolicy) {
       const key = deref(target.targetKey ?? target)
       const exists = files.has(key)
       if (expected.kind === 'createIfAbsent' && exists) {
@@ -110,7 +110,7 @@ function fakeFs(initial, options = {}) {
           throw error
         }
       }
-      writes.push({ key, content, expected })
+      writes.push({ key, content, expected, sandboxPolicy })
       const before = files.get(key)
       files.set(key, content)
       version += 1
@@ -239,6 +239,23 @@ test('writeFile refuses content above the size limit', async () => {
 test('writeFile refuses non-string content', async () => {
   const fs = fakeFs({})
   await assert.rejects(() => writeFile(fs, 'C:/notes', 'x.md', 42, null, undefined), /content must be a string/)
+})
+
+test('every write is fenced to the imported folder, not the agent workspace', async () => {
+  // The backend falls back to the session policy when no policy is supplied, and
+  // that policy's root is the agent workspace — so an imported folder on another
+  // drive is refused even though the user imported it on purpose.
+  const fs = fakeFs({})
+  await writeFile(fs, 'C:/notes', 'fenced.md', '# fenced', null, undefined)
+  await createEntry(fs, 'C:/notes', 'new.md', 'file', {})
+  assert.equal(fs.writes.length, 2)
+  for (const write of fs.writes) {
+    assert.deepEqual(write.sandboxPolicy, {
+      mode: 'workspace-write',
+      workspaceRoot: 'C:/notes',
+      additionalWritableRoots: ['C:/notes'],
+    })
+  }
 })
 
 test('createEntry writes an empty file through the createIfAbsent primitive', async () => {

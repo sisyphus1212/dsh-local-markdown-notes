@@ -14,7 +14,8 @@ The panel is local-first: files stay where they are on disk, nothing is copied, 
 - **Edit with auto-save** — the editor saves while you type, and keystrokes typed while a save is
   already in flight are not dropped (they are re-sent after the write settles).
 - **Markdown rendering** — headings, tables, lists, task lists, links and fenced code blocks with
-  syntax highlighting for 18 languages.
+  syntax highlighting (shell, PowerShell, Python, JavaScript/TypeScript, Go, Rust, Java, C/C++,
+  SQL, JSON, YAML and more).
 - **Read-only Git context** — a file's status against `HEAD`, a diff with per-line change bars,
   and line blame for the current file. The plugin only runs `git status`, `git diff` and
   `git blame`; it never commits, stages, checks out or rewrites history.

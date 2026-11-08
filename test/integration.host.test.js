@@ -608,9 +608,7 @@ describe('host integration: real git subprocess', { skip: !hasGit && 'git is una
       recorded.calls.length = 0
       await host.remote.registerProject(dir)
       assert.deepEqual(
-        recorded.calls
-          .map((call) => call.argv.slice(1).join(' '))
-          .filter((line) => line.startsWith('init')),
+        recorded.calls.map((call) => call.argv).filter((argv) => argv.includes('init')),
         [],
         'an existing repository root must not be re-initialized',
       )
@@ -620,7 +618,7 @@ describe('host integration: real git subprocess', { skip: !hasGit && 'git is una
       mkdirSync(child, { recursive: true })
       recorded.calls.length = 0
       await host.remote.registerProject(child)
-      const inits = recorded.calls.filter((call) => call.argv.slice(1).join(' ').startsWith('init'))
+      const inits = recorded.calls.filter((call) => call.argv.includes('init'))
       assert.equal(inits.length, 1)
       assert.equal(inits[0].cwd, child, 'git init must run inside the selected directory')
       assert.equal(existsSync(join(child, '.git')), true)

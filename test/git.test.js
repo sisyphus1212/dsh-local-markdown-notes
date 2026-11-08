@@ -232,6 +232,22 @@ test('readDiff leaves an ignored note undecorated', { skip: !GIT }, () =>
   }),
 )
 
+test('readDiff prints a non-ASCII note name as UTF-8, not octal escapes', { skip: !GIT }, () =>
+  withRepository(async (root) => {
+    await initRepository(subprocess, root, undefined)
+    // `core.quotepath` defaults to true, so without the pinned config Git prints
+    // `diff --git "a/\345\270\270..."` and the panel cannot show the note's name.
+    const name = '常用命令.md'
+    writeFileSync(join(root, name), 'one\n')
+    fixture(root, 'add', '--', name)
+    fixture(root, 'commit', '-m', 'first')
+    writeFileSync(join(root, name), 'one\ntwo\n')
+    const diff = await readDiff(subprocess, root, name, undefined)
+    assert.match(diff.diff, /^diff --git a\/常用命令\.md b\/常用命令\.md$/m)
+    assert.doesNotMatch(diff.diff, /\\[0-7]{3}/)
+  }),
+)
+
 test('readBlame returns the commit that introduced a line', { skip: !GIT }, () =>
   withRepository(async (root) => {
     await initRepository(subprocess, root, undefined)

@@ -179,6 +179,59 @@ test('readDiff tolerates a repository without commits', { skip: !GIT }, () =>
   }),
 )
 
+test('readDiff draws a never-committed note as entirely new', { skip: !GIT }, () =>
+  withRepository(async (root) => {
+    await initRepository(subprocess, root, undefined)
+    writeFileSync(join(root, 'a.md'), 'one\ntwo\n')
+    // The change bars need one `+` line per line of the note; an empty diff
+    // would leave a brand new note looking untouched.
+    const diff = await readDiff(subprocess, root, 'a.md', undefined)
+    assert.match(diff.diff, /^diff --git a\/a\.md b\/a\.md$/m)
+    assert.match(diff.diff, /^@@ -0,0 \+1,2 @@$/m)
+    assert.match(diff.diff, /^\+one$/m)
+    assert.match(diff.diff, /^\+two$/m)
+    assert.equal(diff.note, undefined, 'a drawable file is not reported as missing its baseline')
+  }),
+)
+
+test('readDiff draws an untracked note as new even when other commits exist', { skip: !GIT }, () =>
+  withRepository(async (root) => {
+    await initRepository(subprocess, root, undefined)
+    writeFileSync(join(root, 'tracked.md'), 'x\n')
+    fixture(root, 'add', 'tracked.md')
+    fixture(root, 'commit', '-m', 'first')
+    writeFileSync(join(root, 'fresh.md'), 'a\nb\nc\n')
+    // `git diff HEAD -- fresh.md` exits 0 with no output here, which used to
+    // read as "unchanged".
+    const diff = await readDiff(subprocess, root, 'fresh.md', undefined)
+    assert.match(diff.diff, /^@@ -0,0 \+1,3 @@$/m)
+    assert.match(diff.diff, /^\+c$/m)
+  }),
+)
+
+test('readDiff leaves a tracked but unchanged note undecorated', { skip: !GIT }, () =>
+  withRepository(async (root) => {
+    await initRepository(subprocess, root, undefined)
+    writeFileSync(join(root, 'a.md'), 'one\n')
+    fixture(root, 'add', 'a.md')
+    fixture(root, 'commit', '-m', 'first')
+    const diff = await readDiff(subprocess, root, 'a.md', undefined)
+    assert.equal(diff.diff, '', 'an unchanged tracked file has nothing to draw')
+    assert.equal(diff.note, undefined)
+  }),
+)
+
+test('readDiff leaves an ignored note undecorated', { skip: !GIT }, () =>
+  withRepository(async (root) => {
+    await initRepository(subprocess, root, undefined)
+    writeFileSync(join(root, '.gitignore'), 'ignored.md\n')
+    writeFileSync(join(root, 'ignored.md'), 'nope\n')
+    // Ignored files are not part of the repository, so they are not "new".
+    const diff = await readDiff(subprocess, root, 'ignored.md', undefined)
+    assert.equal(diff.diff, '')
+  }),
+)
+
 test('readBlame returns the commit that introduced a line', { skip: !GIT }, () =>
   withRepository(async (root) => {
     await initRepository(subprocess, root, undefined)

@@ -463,9 +463,17 @@ describe('host integration: real git subprocess', { skip: !hasGit && 'git is una
       writeFileSync(join(dir, 'doc.md'), 'first\n')
       const project = await host.remote.registerProject(dir)
 
+      // With no commit to compare against, the note is drawn as entirely new so
+      // the editor still shows where its lines came from.
       const beforeCommit = await host.remote.gitDiff(project.id, 'doc.md')
-      assert.equal(beforeCommit.diff, '')
-      assert.equal(beforeCommit.note, 'no commits yet')
+      assert.match(beforeCommit.diff, /^@@ -0,0 \+1 @@$/m)
+      assert.match(beforeCommit.diff, /^\+first$/m)
+      assert.equal(beforeCommit.note, undefined)
+
+      // The repository-wide diff has no file to draw, so it keeps the note.
+      const wholeRepo = await host.remote.gitDiff(project.id, '')
+      assert.equal(wholeRepo.diff, '')
+      assert.equal(wholeRepo.note, 'no commits yet')
 
       gitOk(dir, ['add', '--', 'doc.md'])
       gitOk(dir, ['commit', '--quiet', '-m', 'first'])

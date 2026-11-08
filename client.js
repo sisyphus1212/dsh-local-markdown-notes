@@ -259,6 +259,8 @@ body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-tab[aria-selected="true"]{color:inherit;background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.08))}
 .lmn-pane{overflow:auto;min-height:0;padding:8px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word}
 .lmn-note{padding:10px 12px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
+.lmn-dirty{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:12px;background:var(--dsw-alias-state-warn-tertiary,#fff4e0);color:var(--dsw-alias-state-warn-primary,#b25e09)}
+.lmn-dirty::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .lmn-error{margin:8px 12px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-state-error-primary,#ec1313);border:1px solid var(--dsw-alias-state-error-primary,#ec1313)}
 .lmn-status{display:flex;flex-direction:column;gap:2px}
 .lmn-status button{font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:inherit;text-align:left;background:none;border:0;border-radius:6px;padding:2px 6px;cursor:pointer}
@@ -397,6 +399,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       ['writeFile', ['projectId', 'relativePath', 'content', 'expectedVersion'], 'notes.FileContent'],
       ['gitStatus', ['projectId'], 'notes.GitStatus'],
       ['gitDiff', ['projectId', 'relativePath'], 'notes.GitDiff'],
+      ['gitBaseline', ['projectId', 'relativePath'], 'notes.GitBaseline'],
       ['gitBlame', ['projectId', 'relativePath', 'line'], 'notes.BlameEntry'],
       ['createEntry', ['projectId', 'relativePath', 'kind'], 'notes.CreatedEntry'],
       ['deleteEntry', ['projectId', 'relativePath'], 'notes.RemovedEntry'],
@@ -486,6 +489,8 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           call('writeFile', [projectId, relativePath, content, expectedVersion ?? null]),
         gitStatus: (projectId) => call('gitStatus', [projectId]),
         gitDiff: (projectId, relativePath) => call('gitDiff', [projectId, relativePath ?? null]),
+        gitBaseline: (projectId, relativePath) =>
+          call('gitBaseline', [projectId, relativePath]),
         gitBlame: (projectId, relativePath, line) => call('gitBlame', [projectId, relativePath, line]),
         createEntry: (projectId, relativePath, kind) =>
           call('createEntry', [projectId, relativePath, kind]),
@@ -592,93 +597,120 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     }
 
     /**
-     * Turn one file's unified diff into the per-line marks the gutter paints.
+     * Longest-common-subsequence matches between two runs of lines.
      *
-     * Only the hunk headers are trusted for structure: a Markdown body may
-     * legitimately contain a line that reads `---` or `+++`, so treating those
-     * two prefixes as headers would mis-read the file's own content as a diff
-     * boundary. Each `@@ -a,b +c,d @@` therefore switches into a counted mode
-     * where exactly `b` old lines and `d` new lines are consumed, and nothing
-     * outside that window can influence the result.
-     *
-     * A run of removals followed by a run of additions is the shape a changed
-     * line takes, so the first `min(removed, added)` new lines are reported as
-     * modified and only the surplus as added. Removals with no surviving line
-     * have nowhere of their own to sit, so they are anchored to the line above
-     * the block, which is where an editor draws a deletion marker.
+     * Only used on the middle of a file, after the unchanged head and tail have
+     * been trimmed away, so the table stays small for the edits a person makes.
+     * A block too large to afford the table falls back to "everything here
+     * changed", which is a coarse but never wrong answer.
      */
-    function parseDiffDecorations(text) {
-      const added = new Set()
-      const modified = new Set()
-      const deleted = new Set()
-      const lines = String(text ?? '').split('\n')
-      const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+    const LCS_CELLS = 1000000
 
-      let newLine = 0
-      let oldRemain = 0
-      let newRemain = 0
-      let inside = false
-      let removed = 0
-      let arrived = []
-
-      const flush = () => {
-        if (removed > 0 || arrived.length > 0) {
-          const pairs = Math.min(removed, arrived.length)
-          for (let index = 0; index < pairs; index += 1) modified.add(arrived[index])
-          for (let index = pairs; index < arrived.length; index += 1) added.add(arrived[index])
-          if (removed > pairs) {
-            const anchor = arrived.length > 0 ? arrived[0] : newLine
-            deleted.add(Math.max(1, anchor - 1))
-          }
+    function lcsPairs(oldBlock, newBlock) {
+      const rows = oldBlock.length
+      const cols = newBlock.length
+      if (rows === 0 || cols === 0) return []
+      if ((rows + 1) * (cols + 1) > LCS_CELLS) return []
+      const width = cols + 1
+      const table = new Uint32Array((rows + 1) * width)
+      for (let i = rows - 1; i >= 0; i -= 1) {
+        for (let j = cols - 1; j >= 0; j -= 1) {
+          table[i * width + j] =
+            oldBlock[i] === newBlock[j]
+              ? table[(i + 1) * width + j + 1] + 1
+              : Math.max(table[(i + 1) * width + j], table[i * width + j + 1])
         }
-        removed = 0
-        arrived = []
       }
-
-      for (const line of lines) {
-        const head = HUNK.exec(line)
-        if (head !== null) {
-          flush()
-          oldRemain = head[2] === undefined ? 1 : Number(head[2])
-          newRemain = head[4] === undefined ? 1 : Number(head[4])
-          newLine = Number(head[3])
-          inside = oldRemain > 0 || newRemain > 0
-          continue
-        }
-        if (!inside) continue
-        if (line === '' || line.startsWith('\\')) continue
-
-        const kind = line[0]
-        if (kind === '-') {
-          removed += 1
-          oldRemain -= 1
-        } else if (kind === '+') {
-          arrived.push(newLine)
-          newLine += 1
-          newRemain -= 1
-        } else if (kind === ' ') {
-          flush()
-          newLine += 1
-          oldRemain -= 1
-          newRemain -= 1
+      const pairs = []
+      let i = 0
+      let j = 0
+      while (i < rows && j < cols) {
+        if (oldBlock[i] === newBlock[j]) {
+          pairs.push([i, j])
+          i += 1
+          j += 1
+        } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) {
+          i += 1
         } else {
-          // A prefix this parser does not model: stop rather than guess.
-          flush()
-          inside = false
-          continue
-        }
-        if (oldRemain <= 0 && newRemain <= 0) {
-          flush()
-          inside = false
+          j += 1
         }
       }
-      flush()
+      return pairs
+    }
 
-      return { added, modified, deleted }
+    /**
+     * Paint one changed region: the lines that survived an edit are untouched,
+     * the first `min(removed, added)` new lines are modifications, any surplus
+     * new lines are additions, and removals with nothing in their place are
+     * anchored to the line above the gap — where an editor draws a deletion
+     * marker, because a removed line has no row of its own in the buffer.
+     */
+    function markRegion(oldBlock, newBlock, offset, marks) {
+      const pairs = lcsPairs(oldBlock, newBlock)
+      const regions = []
+      let cursorOld = 0
+      let cursorNew = 0
+      for (const [i, j] of pairs) {
+        if (i > cursorOld || j > cursorNew) regions.push([cursorOld, i, cursorNew, j])
+        cursorOld = i + 1
+        cursorNew = j + 1
+      }
+      if (cursorOld < oldBlock.length || cursorNew < newBlock.length) {
+        regions.push([cursorOld, oldBlock.length, cursorNew, newBlock.length])
+      }
+
+      for (const [oldFrom, oldTo, newFrom, newTo] of regions) {
+        const removed = oldTo - oldFrom
+        const addedCount = newTo - newFrom
+        const paired = Math.min(removed, addedCount)
+        for (let k = 0; k < paired; k += 1) marks.modified.add(offset + newFrom + k + 1)
+        for (let k = paired; k < addedCount; k += 1) marks.added.add(offset + newFrom + k + 1)
+        if (removed > paired) marks.deleted.add(Math.max(1, offset + newFrom))
+      }
+    }
+
+    /**
+     * Which lines of `buffer` differ from `before`.
+     *
+     * This is the gutter's only source of truth: comparing the buffer against
+     * the committed text means an unsaved edit shows up the moment it is typed,
+     * exactly as an editor's quick diff does, instead of waiting for a save.
+     */
+    function diffLineMarks(before, after) {
+      const marks = { added: new Set(), modified: new Set(), deleted: new Set() }
+      const oldLines = String(before ?? '').split('\n')
+      const newLines = String(after ?? '').split('\n')
+
+      // Trimming the shared head and tail keeps the quadratic part tiny: a
+      // typical edit is a handful of lines in a file of thousands.
+      let head = 0
+      const headLimit = Math.min(oldLines.length, newLines.length)
+      while (head < headLimit && oldLines[head] === newLines[head]) head += 1
+      let oldEnd = oldLines.length
+      let newEnd = newLines.length
+      while (oldEnd > head && newEnd > head && oldLines[oldEnd - 1] === newLines[newEnd - 1]) {
+        oldEnd -= 1
+        newEnd -= 1
+      }
+
+      markRegion(oldLines.slice(head, oldEnd), newLines.slice(head, newEnd), head, marks)
+      return marks
     }
 
     /** One shared "nothing changed" value, so an unchanged file never re-renders. */
     const EMPTY_MARKS = { added: new Set(), modified: new Set(), deleted: new Set() }
+
+    /**
+     * The gutter marks for one buffer.
+     *
+     * `before === null` means there is nothing to compare against — the file is
+     * not part of the repository, or its baseline could not be read — so no
+     * mark is drawn rather than calling every line new.
+     */
+    function lineMarks(before, after) {
+      if (before === null || before === undefined) return EMPTY_MARKS
+      return diffLineMarks(before, after)
+    }
 
     // --- Markdown renderer -------------------------------------------------
     // The preview is built from React elements, never from HTML strings, so a
@@ -1520,7 +1552,10 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const [diffPath, setDiffPath] = React.useState(null)
       const [blame, setBlame] = React.useState(null)
       const [lineEntry, setLineEntry] = React.useState(null)
-      const [marks, setMarks] = React.useState(EMPTY_MARKS)
+      // The committed text of the open file, read once per open: the gutter
+      // compares it against the live buffer on every render, so typing needs
+      // no request of its own.
+      const [baseline, setBaseline] = React.useState(null)
       const [viewTarget, setViewTarget] = React.useState('')
       const [searchQuery, setSearchQuery] = React.useState('')
       const [searchResult, setSearchResult] = React.useState(null)
@@ -1534,6 +1569,35 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const [resizing, setResizing] = React.useState(false)
       const bottomRef = React.useRef(null)
       const resizeRef = React.useRef(null)
+
+      /**
+       * Auto-save follows VS Code's `files.autoSave: afterDelay`.
+       *
+       * In VS Code every change restarts one timer (`discardAutoSave()` then
+       * `setTimeout`), so a save lands once typing pauses rather than every N
+       * milliseconds. The delay here is shorter than VS Code's own 1000 ms
+       * default because this panel holds short notes and waiting a second for
+       * the write felt slow.
+       */
+      const AUTO_SAVE_DELAY = 600
+      // A second net for a buffer left dirty without a further edit, a blur or
+      // a pause: VS Code has no equivalent, this panel asked for one.
+      const AUTO_SAVE_INTERVAL = 10 * 60 * 1000
+      const saveTimer = React.useRef(null)
+      // A timer outlives the render that set it, so it must not close over that
+      // render's `save`; this ref always holds the newest one.
+      const saveRef = React.useRef(null)
+
+      const scheduleAutoSave = React.useCallback(() => {
+        if (saveTimer.current !== null) {
+          window.clearTimeout(saveTimer.current)
+          saveTimer.current = null
+        }
+        saveTimer.current = window.setTimeout(() => {
+          saveTimer.current = null
+          void saveRef.current?.({ quiet: true })
+        }, AUTO_SAVE_DELAY)
+      }, [])
 
       const report = React.useCallback((caught) => {
         setError({ message: caught?.message ?? String(caught), code: caught?.code ?? '' })
@@ -1617,24 +1681,25 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       )
 
       /**
-       * Recompute the gutter marks for one file from its working-tree diff.
+       * Read the committed text the gutter compares against.
        *
-       * The diff is the only authority on which lines are new or changed, and
-       * it compares the file on disk against `HEAD`. A file whose diff cannot
-       * be read simply carries no marks: a decoration is a hint, never a
-       * reportable failure, so this never surfaces an error banner.
+       * The comparison itself happens during render, against the live buffer,
+       * so one read per file open is enough: typing changes the buffer, not
+       * `HEAD`, and saving changes neither. An unreadable baseline carries no
+       * marks — a decoration is a hint, never a reportable failure, so this
+       * never surfaces an error banner.
        */
       const refreshMarks = React.useCallback(
         async (target, relative) => {
           if (target === null || typeof relative !== 'string' || relative === '') {
-            setMarks(EMPTY_MARKS)
+            setBaseline(null)
             return
           }
           try {
-            const value = await api.gitDiff(target.id, relative)
-            setMarks(parseDiffDecorations(value?.diff ?? ''))
+            const value = await api.gitBaseline(target.id, relative)
+            setBaseline({ path: relative, content: value?.content ?? null })
           } catch {
-            setMarks(EMPTY_MARKS)
+            setBaseline(null)
           }
         },
         [api],
@@ -1651,7 +1716,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             setDraft('')
             setBlame(null)
             setLineEntry(null)
-            setMarks(EMPTY_MARKS)
+            setBaseline(null)
             setDiff(null)
             setDiffPath(null)
             setNotice(null)
@@ -1725,14 +1790,26 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         [api, refreshMarks, report],
       )
 
-      const save = React.useCallback(async () => {
+      /**
+       * Write the buffer back to disk.
+       *
+       * `quiet` is the auto-save path (the debounce timer, leaving the editor
+       * and the ten-minute net). It skips the work when the buffer already
+       * matches the disk and never announces itself: a note that saves while
+       * the user is typing must not flash "已保存" in the toolbar. Both paths
+       * write the same bytes through the same call, because a second save
+       * implementation is a second place for the version check to drift.
+       */
+      const save = React.useCallback(async (options = {}) => {
+        const quiet = options.quiet === true
         if (project === null || file === null) return
+        if (quiet && draft === file.content) return
         try {
           setBusy('save')
           const value = await api.writeFile(project.id, file.path, draft, file.version)
           setFile({ path: value.path, version: value.version, content: value.content })
           setDraft(value.content)
-          setNotice('panel.saved')
+          if (!quiet) setNotice('panel.saved')
           setError(null)
           // The buffer now matches the disk again, so a later panel switch must
           // read the saved file rather than replay stale typing.
@@ -1740,8 +1817,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           session.draft = value.content
           session.dirty = false
           writeStoredSession()
-          // Saving rewrites the disk copy, which is exactly what the diff
-          // compares against HEAD, so the marks are stale until re-read.
+          // The bars compare HEAD's copy against the buffer, and both moved: the
+          // buffer is the returned content now, and HEAD's copy is still whatever
+          // it was. Re-reading the baseline keeps the two in step.
           await refreshStatus(project)
           await refreshMarks(project, value.path)
         } catch (caught) {
@@ -1753,6 +1831,26 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           setBusy(null)
         }
       }, [api, draft, file, project, refreshMarks, refreshStatus, report])
+
+      // The auto-save timers outlive the render that armed them, so they read
+      // the newest `save` through this ref instead of closing over an old one.
+      saveRef.current = save
+
+      /**
+       * A ten-minute net under the debounce and the blur save.
+       *
+       * A buffer can stay dirty without either firing — the user types one
+       * character and then just watches the screen — so the note is written
+       * once a decade of edits would otherwise have gone unsaved. The interval
+       * is armed once per mount and cleared on the way out.
+       */
+      React.useEffect(() => {
+        if (typeof window.setInterval !== 'function') return
+        const handle = window.setInterval(() => {
+          void saveRef.current?.({ quiet: true })
+        }, AUTO_SAVE_INTERVAL)
+        return () => window.clearInterval(handle)
+      }, [])
 
       /**
        * Come back to whatever the user had open.
@@ -2838,6 +2936,14 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       // opens, so the gutter and the caret's notion of a line agree.
       const lineCount = Math.max(1, draft.split('\n').length)
 
+      // The marks compare the live buffer against the committed text, so they
+      // move as the user types instead of waiting for a write. A baseline read
+      // for another file is ignored: it describes a different buffer.
+      const marks =
+        baseline !== null && file !== null && baseline.path === file.path
+          ? lineMarks(baseline.content, draft)
+          : EMPTY_MARKS
+
       // The bottom pane is content-sized until the user drags the splitter; from
       // then on it carries an explicit height so the two halves stay put.
       const BOTTOM_MIN = 60
@@ -2960,9 +3066,22 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                               session.draft = next
                               session.dirty = next !== (file.content ?? next)
                               writeStoredSession()
+                              // Every keystroke restarts the one timer, so the
+                              // write lands when typing pauses.
+                              scheduleAutoSave()
                             }
                           },
                           onScroll: syncGutterScroll,
+                          // Leaving the editor writes straight away: the timer
+                          // would otherwise hold an unsaved note for its delay
+                          // while the user is already reading something else.
+                          onBlur: () => {
+                            if (saveTimer.current !== null) {
+                              window.clearTimeout(saveTimer.current)
+                              saveTimer.current = null
+                            }
+                            void save({ quiet: true })
+                          },
                           onKeyUp: (event) => void onSelectLine(event),
                           onClick: (event) => void onSelectLine(event),
                           'aria-label': file.path,
@@ -3098,7 +3217,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             notice === 'panel.chatUnavailable'
               ? h('span', { className: 'lmn-note' }, t('panel.chatUnavailable'))
               : null,
-            dirty ? h('span', { className: 'lmn-note' }, t('panel.modifiedDirty')) : null,
+            dirty ? h('span', { className: 'lmn-dirty' }, t('panel.modifiedDirty')) : null,
             h(
               'button',
               {

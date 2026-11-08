@@ -181,20 +181,62 @@ function createHookRuntime() {
   }
 }
 
-/** Replace the sandbox timers with a queue a test can drain deterministically. */
+/**
+ * Replace the sandbox timers with a queue a test can drain deterministically.
+ *
+ * Cancellation really removes the job, so a debounce that reschedules itself is
+ * observable: only the last arming survives. Intervals are held apart from the
+ * one-shot jobs, because draining `run()` must not loop forever on a timer that
+ * re-arms itself every ten minutes.
+ */
 function installTimerQueue(windowDouble) {
-  const queue = []
-  windowDouble.setTimeout = (fn) => {
-    queue.push(fn)
-    return queue.length
+  const pending = new Map()
+  const repeating = new Map()
+  let nextId = 0
+
+  const arm = (map, fn) => {
+    nextId += 1
+    map.set(nextId, fn)
+    return nextId
   }
-  windowDouble.clearTimeout = () => {}
+  const disarm = (id) => {
+    pending.delete(id)
+    repeating.delete(id)
+  }
+
+  windowDouble.setTimeout = (fn) => arm(pending, fn)
+  windowDouble.setInterval = (fn) => arm(repeating, fn)
+  windowDouble.clearTimeout = disarm
+  windowDouble.clearInterval = disarm
+
+  const settle = async () => {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve()
+  }
+
   return {
+    /** How many one-shot timers are armed right now (a debounce leaves one). */
+    pending() {
+      return pending.size
+    },
+    /** How many intervals are armed right now (the ten-minute safety net). */
+    repeating() {
+      return repeating.size
+    },
+    /** Fire one repeating timer without disarming it, by registration order. */
+    async tick() {
+      const entry = repeating.entries().next()
+      if (entry.done === true) return
+      entry.value[1]()
+      await settle()
+    },
     async run() {
-      while (queue.length > 0) {
-        const job = queue.shift()
+      while (pending.size > 0) {
+        const entry = pending.entries().next()
+        if (entry.done === true) break
+        const [id, job] = entry.value
+        pending.delete(id)
         job()
-        for (let i = 0; i < 20; i += 1) await Promise.resolve()
+        await settle()
       }
     },
   }
@@ -421,7 +463,7 @@ test('client apply registers the locale dictionary, style, remote mount and both
 
   assert.equal(record.mounts.length, 1)
   assert.equal(record.mounts[0].package, '@local/local-markdown-notes')
-  assert.equal(record.mounts[0].descriptors.length, 13)
+  assert.equal(record.mounts[0].descriptors.length, 14)
 
   assert.deepEqual([...record.injected], ['sidebar.panellist', 'main'])
   assert.equal(record.slots.length, 2)
@@ -582,6 +624,7 @@ test('every mounted descriptor uses a strict codec on parameters and result', as
       'writeFile',
       'gitStatus',
       'gitDiff',
+      'gitBaseline',
       'gitBlame',
       'createEntry',
       'deleteEntry',
@@ -783,8 +826,15 @@ function treeNamespace(options = {}) {
       }
       return { ok: true, value: { path: relativePath, version: 'v1', content: 'one\ntwo\nthree\n' } }
     },
-    async writeFile() {
-      throw new Error('writeFile must not run in these tests')
+    async writeFile(projectId, relativePath, content, expectedVersion) {
+      calls.push(['writeFile', projectId, relativePath, content, expectedVersion])
+      if (options.writeFails) {
+        throw Object.assign(new Error('the file moved on'), { code: 'notes/stale' })
+      }
+      // The write lands: from here on the disk copy is what was typed, so the
+      // buffer is clean and a second save has nothing left to do.
+      const written = { path: relativePath, version: 'v2', content }
+      return { ok: true, value: written }
     },
     async createEntry(projectId, relativePath, kind) {
       calls.push(['createEntry', projectId, relativePath, kind])
@@ -809,6 +859,17 @@ function treeNamespace(options = {}) {
         throw Object.assign(new Error('git diff failed'), { code: 'notes/git-failed' })
       }
       return { ok: true, value: diff ?? { diff: '', note: 'no-commits' } }
+    },
+    async gitBaseline(projectId, relativePath) {
+      calls.push(['gitBaseline', projectId, relativePath])
+      if (options.baselineFails === true) {
+        throw Object.assign(new Error('git show failed'), { code: 'notes/git-failed' })
+      }
+      // The baseline is HEAD's copy of the file. It defaults to the disk copy,
+      // so an untouched file has nothing to mark; a test that wants marks hands
+      // in the older text HEAD still holds.
+      const content = options.baseline === undefined ? 'one\ntwo\nthree\n' : options.baseline
+      return { ok: true, value: { projectId, path: relativePath, content, tracked: content !== null } }
     },
     async gitBlame(projectId, relativePath, line) {
       calls.push(['gitBlame', projectId, relativePath, line])
@@ -1935,56 +1996,35 @@ function gutterMarks(panel) {
   )
 }
 
-/** Open 常用命令.md with the given unified diff behind gitDiff. */
-async function openWithDiff(text) {
+/**
+ * Open 常用命令.md with `baseline` behind gitBaseline, then optionally type
+ * `typed` into the editor. The bars compare HEAD's copy against the buffer, so
+ * typing is what moves them: no diff has to be fetched again.
+ */
+async function openWithBaseline(baseline, typed) {
   const { namespace, calls } = treeNamespace({
     entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
-    diff: { diff: text },
+    baseline,
   })
   const panel = await mountPanel({ namespace })
-  const { gutter } = await openWithGutter(panel)
-  assert.deepEqual(
-    findAll(gutter, 'lmn-gutter-num').map((num) => textsOf(num)),
-    ['1', '2', '3', '4'],
-    'the numbers stay in their own column, untouched by the marks',
-  )
+  await openWithGutter(panel)
+  if (typed !== undefined) {
+    editorTextarea(panel).props.onChange({ target: { value: typed } })
+    await panel.runtime.flush()
+  }
   return { panel, calls }
 }
 
 test('an added line carries the added bar and its neighbours stay blank', async () => {
-  // The file on disk is one/two/three/ + a fourth line that is not in HEAD.
-  const { panel } = await openWithDiff(
-    [
-      'diff --git a/常用命令.md b/常用命令.md',
-      'index 1111111..2222222 100644',
-      '--- a/常用命令.md',
-      '+++ b/常用命令.md',
-      '@@ -1,3 +1,4 @@',
-      ' one',
-      ' two',
-      ' three',
-      '+four',
-      '',
-    ].join('\n'),
-  )
+  // HEAD holds one/two/three; the buffer gained a fourth line that HEAD never
+  // had. The bars come from the buffer itself, so they appear without a save.
+  const { panel } = await openWithBaseline('one\ntwo\nthree', 'one\ntwo\nthree\nfour')
 
   assert.deepEqual(gutterMarks(panel), ['', '', '', 'is-added'], 'only the new line is marked')
 })
 
-test('a rewritten line is marked as modified rather than added', async () => {
-  const { panel } = await openWithDiff(
-    [
-      'diff --git a/常用命令.md b/常用命令.md',
-      '--- a/常用命令.md',
-      '+++ b/常用命令.md',
-      '@@ -1,3 +1,3 @@',
-      ' one',
-      '-two',
-      '+TWO',
-      ' three',
-      '',
-    ].join('\n'),
-  )
+test('a line typed over is marked as modified rather than added', async () => {
+  const { panel } = await openWithBaseline('one\ntwo\nthree\n', 'one\nTWO\nthree\n')
 
   assert.deepEqual(
     gutterMarks(panel),
@@ -1993,50 +2033,28 @@ test('a rewritten line is marked as modified rather than added', async () => {
   )
 })
 
-test('a removed line with no replacement marks the line above it', async () => {
-  const { panel } = await openWithDiff(
-    [
-      'diff --git a/常用命令.md b/常用命令.md',
-      '--- a/常用命令.md',
-      '+++ b/常用命令.md',
-      '@@ -1,3 +1,2 @@',
-      ' one',
-      '-two',
-      ' three',
-      '',
-    ].join('\n'),
-  )
+test('a line removed from the buffer marks the line above it', async () => {
+  const { panel } = await openWithBaseline('one\ntwo\nthree\n', 'one\nthree\n')
 
   assert.deepEqual(
     gutterMarks(panel),
-    ['is-deleted', '', '', ''],
+    ['is-deleted', '', ''],
     'a deletion has no line of its own, so it is drawn where the gap opens',
   )
 })
 
 test('a markdown line that reads like a diff header is still counted as content', async () => {
-  // `---` is front-matter in the note, so the diff line removing it is `----`.
-  // Reading that as the `--- a/…` header would abandon the hunk and lose the mark.
-  const { panel } = await openWithDiff(
-    [
-      'diff --git a/常用命令.md b/常用命令.md',
-      '--- a/常用命令.md',
-      '+++ b/常用命令.md',
-      '@@ -1,3 +1,2 @@',
-      ' title: x',
-      '----',
-      ' date: y',
-      '',
-    ].join('\n'),
-  )
+  // `---` is front-matter in the note. Comparing the two copies keeps it as an
+  // ordinary line, so dropping it is a deletion like any other.
+  const { panel } = await openWithBaseline('title: x\n---\ndate: y\n', 'title: x\ndate: y\n')
 
-  assert.deepEqual(gutterMarks(panel), ['is-deleted', '', '', ''], 'the removed separator is counted')
+  assert.deepEqual(gutterMarks(panel), ['is-deleted', '', ''], 'the removed separator is counted')
 })
 
-test('an unreadable diff leaves the gutter plain instead of reporting a failure', async () => {
+test('an unreadable baseline leaves the gutter plain instead of reporting a failure', async () => {
   const { namespace } = treeNamespace({
     entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
-    diffFails: true,
+    baselineFails: true,
   })
   const panel = await mountPanel({ namespace })
   const { gutter } = await openWithGutter(panel)
@@ -2048,10 +2066,124 @@ test('an unreadable diff leaves the gutter plain instead of reporting a failure'
   )
   assert.ok(
     !textsOf(findOne(panel.runtime.tree(), 'lmn-error') ?? { props: {}, children: [] }).includes('git'),
-    'a decoration is a hint: a failed diff never becomes an error banner',
+    'a decoration is a hint: a failed read never becomes an error banner',
   )
 })
 
+
+// ---------------------------------------------------------------------------
+// Auto-save: the buffer reaches the disk without the user pressing 保存
+// ---------------------------------------------------------------------------
+
+/** The writeFile calls made through the fake namespace, in order. */
+function writes(calls) {
+  return calls.filter((call) => call[0] === 'writeFile')
+}
+
+test('typing saves itself once the typing pauses, without flashing 已保存', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\ntyped\n' } })
+  await panel.runtime.flush()
+  assert.equal(writes(calls).length, 0, 'nothing is written mid-keystroke')
+
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  const done = writes(calls)
+  assert.deepEqual(done.map((call) => call[3]), ['one\ntwo\ntyped\n'], 'the pause writes what was typed')
+  assert.ok(
+    !textsOf(panel.runtime.tree()).includes(`${NS}:panel.saved`),
+    'an automatic save stays silent: the toolbar must not announce it',
+  )
+  assert.ok(
+    !textsOf(panel.runtime.tree()).includes(`${NS}:panel.modifiedDirty`),
+    'and the buffer is no longer flagged as unsaved',
+  )
+})
+
+test('a pause that saves nothing leaves the pending timer disarmed', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nthree\n' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  assert.equal(writes(calls).length, 0, 'an unchanged buffer is never written')
+})
+
+test('typing again restarts the wait instead of stacking saves', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\n' } })
+  await panel.runtime.flush()
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nthree\nlast\n' } })
+  await panel.runtime.flush()
+
+  assert.equal(panel.timerQueue.pending(), 1, 'the debounce keeps exactly one pending save')
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  const done = writes(calls)
+  assert.equal(done.length, 1, 'one pause produces one write, not one per keystroke')
+  assert.equal(done[0][3], 'one\ntwo\nthree\nlast\n', 'and it writes the whole buffer as it stands')
+})
+
+test('leaving the editor saves at once and cancels the pending save', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nblurred\n' } })
+  await panel.runtime.flush()
+  assert.equal(panel.timerQueue.pending(), 1, 'the pause armed a save')
+
+  editorTextarea(panel).props.onBlur()
+  await panel.runtime.flush()
+
+  assert.equal(panel.timerQueue.pending(), 0, 'the blur cancels the save it just made redundant')
+  assert.deepEqual(writes(calls).map((call) => call[3]), ['one\ntwo\nblurred\n'], 'the buffer went to disk on the way out')
+})
+
+test('the ten-minute net writes a buffer that neither paused nor blurred', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  assert.equal(panel.timerQueue.repeating(), 1, 'one net is armed for the life of the panel')
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nlong sitting\n' } })
+  await panel.runtime.flush()
+  assert.equal(writes(calls).length, 0, 'nothing is written yet')
+
+  await panel.timerQueue.tick()
+  await panel.runtime.flush()
+
+  assert.deepEqual(writes(calls).map((call) => call[3]), ['one\ntwo\nlong sitting\n'], 'the net catches what the keyboard forgot')
+  assert.equal(panel.timerQueue.repeating(), 1, 'firing the net does not disarm it')
+})
+
+test('a stale version from an automatic save reports itself instead of vanishing', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE, writeFails: true })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nconflicting\n' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  assert.ok(
+    textsOf(panel.runtime.tree()).includes(`${NS}:panel.staleTitle`),
+    'a conflict found by the timer must still reach the user',
+  )
+})
 
 test('the colour layer reproduces the draft one line at a time', async () => {
   const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })

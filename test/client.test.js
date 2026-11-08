@@ -386,7 +386,7 @@ test('client apply registers the locale dictionary, style, remote mount and both
 
   assert.equal(record.mounts.length, 1)
   assert.equal(record.mounts[0].package, '@local/local-markdown-notes')
-  assert.equal(record.mounts[0].descriptors.length, 10)
+  assert.equal(record.mounts[0].descriptors.length, 11)
 
   assert.deepEqual([...record.injected], ['sidebar.panellist', 'main'])
   assert.equal(record.slots.length, 2)
@@ -549,6 +549,7 @@ test('every mounted descriptor uses a strict codec on parameters and result', as
       'gitDiff',
       'gitBlame',
       'createEntry',
+      'searchNotes',
     ],
   )
 
@@ -778,6 +779,23 @@ function treeNamespace(options = {}) {
     },
     async removeProject() {
       return { ok: true, value: { removed: true } }
+    },
+    async searchNotes(projectId, query) {
+      calls.push(['searchNotes', projectId, query])
+      if (options.searchFails) {
+        throw Object.assign(new Error('scan failed'), { code: 'notes/search-failed' })
+      }
+      const hits = (options.searchHits ?? []).map((hit) => ({ ...hit }))
+      return {
+        ok: true,
+        value: {
+          query,
+          hits,
+          scanned: options.searchScanned ?? hits.length,
+          matched: hits.length,
+          truncated: options.searchTruncated === true,
+        },
+      }
     },
   }
   return { namespace, calls }
@@ -2442,4 +2460,110 @@ test('a project that left the registry is forgotten instead of half restored', a
     textsOf(tree).includes(`${NS}:panel.pickProject`),
     'the remaining project is offered instead of a half-restored view',
   )
+})
+
+// ---------------------------------------------------------------------------
+// Cross-file search
+// ---------------------------------------------------------------------------
+
+test('typing a query asks the Host and renders one row per hit', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: { '': [{ path: 'docs', name: 'docs', type: 'directory' }], docs: [] },
+    searchHits: [
+      { path: 'docs/a.md', line: 3, column: 4, text: 'the ovs bridge' },
+      { path: 'notes.md', line: 12, column: 0, text: 'ovs datapath' },
+    ],
+    searchScanned: 7,
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  const input = findOne(panel.runtime.tree(), 'lmn-search-input')
+  assert.ok(input, 'the sidebar renders a search box')
+  input.props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  assert.ok(
+    calls.some((call) => call[0] === 'searchNotes' && call[1] === 'p1' && call[2] === 'ovs'),
+    `the trimmed query reaches the Host: ${JSON.stringify(calls)}`,
+  )
+
+  const tree = panel.runtime.tree()
+  const rows = findAll(tree, 'lmn-hit')
+  assert.equal(rows.length, 2, 'one row per hit')
+  assert.ok(textsOf(rows[0]).includes('docs/a.md'), 'the first row names its file')
+  assert.ok(textsOf(rows[0]).includes('the ovs bridge'), 'the row shows the matched line')
+  assert.ok(findOne(tree, 'lmn-hit-mark'), 'the matched run is marked')
+  assert.ok(findOne(tree, 'lmn-tree').children.some((child) => child?.props?.className === 'lmn-hits'), 'hits replace the tree')
+  assert.ok(textsOf(tree).includes('7'), 'how many files were scanned is reported')
+})
+
+test('clicking a hit opens that file through the normal read path', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: { '': [] },
+    searchHits: [{ path: 'docs/a.md', line: 3, column: 4, text: 'the ovs bridge' }],
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  await click(panel.runtime, findOne(panel.runtime.tree(), 'lmn-hit'))
+
+  assert.ok(
+    calls.some((call) => call[0] === 'readFile' && call[2] === 'docs/a.md'),
+    `the hit is opened by path: ${JSON.stringify(calls)}`,
+  )
+  const tree = panel.runtime.tree()
+  assert.ok(findOne(tree, 'lmn-editor'), 'the editor shows the opened file')
+  assert.ok(textsOf(tree).includes('docs/a.md'), 'the editor names the opened file')
+})
+
+test('clearing the box puts the explorer back without asking again', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] },
+    searchHits: [{ path: '常用命令.md', line: 1, column: 0, text: '常用命令' }],
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+  const asked = calls.filter((call) => call[0] === 'searchNotes').length
+
+  await click(panel.runtime, findOne(panel.runtime.tree(), 'lmn-search-clear'))
+
+  const tree = panel.runtime.tree()
+  assert.equal(findAll(tree, 'lmn-hit').length, 0, 'no hits are left on screen')
+  assert.ok(
+    textsOf(tree).includes('常用命令.md'),
+    'the explorer tree is back with its files',
+  )
+  assert.equal(
+    calls.filter((call) => call[0] === 'searchNotes').length,
+    asked,
+    'clearing is local and issues no request',
+  )
+})
+
+test('a failed search reports the error instead of an empty result', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [] }, searchFails: true })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  const tree = panel.runtime.tree()
+  assert.ok(findOne(tree, 'lmn-error'), 'the failure surfaces as an error')
+  assert.equal(findAll(tree, 'lmn-hit').length, 0, 'no stale hits are shown')
 })

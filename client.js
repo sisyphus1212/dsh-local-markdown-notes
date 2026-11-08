@@ -60,6 +60,14 @@ window.__ModuleLoader__.load({
       'panel.untitledName': '未命名',
       'panel.resize': '拖动调整下方面板高度',
       'panel.restoreMissing': '上次打开的文件已经不在了，请从左侧重新选择。',
+      'panel.searchPlaceholder': '搜索笔记',
+      'panel.searchClear': '清除搜索',
+      'panel.searching': '搜索中…',
+      'panel.searchEmpty': '没有找到匹配内容。',
+      'panel.searchHint': '输入关键词搜索当前文件夹',
+      'panel.searchHits': '命中',
+      'panel.searchScanned': '已扫描',
+      'panel.searchTruncated': '结果不完整',
     }
 
     const EN = {
@@ -114,6 +122,14 @@ window.__ModuleLoader__.load({
       'panel.untitledName': 'Untitled',
       'panel.resize': 'Drag to resize the bottom panel',
       'panel.restoreMissing': 'The file you had open is gone. Pick another one on the left.',
+      'panel.searchPlaceholder': 'Search notes',
+      'panel.searchClear': 'Clear search',
+      'panel.searching': 'Searching…',
+      'panel.searchEmpty': 'No matches.',
+      'panel.searchHint': 'Type to search the current folder',
+      'panel.searchHits': 'hits',
+      'panel.searchScanned': 'scanned',
+      'panel.searchTruncated': 'partial results',
     }
 
     const STYLE = `
@@ -121,6 +137,20 @@ window.__ModuleLoader__.load({
 .lmn-side{width:260px;flex:0 0 260px;border-right:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));display:flex;flex-direction:column;min-height:0}
 .lmn-side-head{display:flex;align-items:center;gap:4px;padding:6px 6px 6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-side-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-search{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
+.lmn-search-input{flex:1;min-width:0;height:24px;padding:0 6px;font:inherit;font-size:12px;color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-bg-layer-2,transparent);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:4px;outline:none}
+.lmn-search-input:focus{border-color:var(--dsw-alias-brand-primary,#0f1115)}
+.lmn-search-clear{flex:0 0 auto;height:24px;padding:0 6px;font:inherit;font-size:11px;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
+.lmn-search-clear:hover{background:rgba(127,127,127,.18);color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-search-note{padding:6px 12px;font-size:11px;line-height:15px;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-hits{display:flex;flex-direction:column;padding:0 0 6px}
+.lmn-hit{display:block;width:100%;text-align:left;font:inherit;background:none;border:0;padding:3px 8px 4px;cursor:pointer;color:inherit;border-radius:3px}
+.lmn-hit:hover,.lmn-hit:focus-visible{background:rgba(127,127,127,.18)}
+.lmn-hit.is-selected{background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
+.lmn-hit-path{display:block;font-size:11px;line-height:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-hit-text{display:block;font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:pre}
+.lmn-hit-line{display:inline-block;min-width:18px;margin-right:5px;text-align:right;font-size:11px;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-hit-mark{background:rgba(255,196,0,.38);color:var(--dsw-alias-label-primary,CanvasText);border-radius:2px}
 .lmn-btn{font:inherit;color:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-alias-bg-layer-2,transparent);padding:3px 8px}
 .lmn-btn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.04))}
 .lmn-btn[disabled]{opacity:.5;cursor:default}
@@ -316,6 +346,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       ['gitDiff', ['projectId', 'relativePath'], 'notes.GitDiff'],
       ['gitBlame', ['projectId', 'relativePath', 'line'], 'notes.BlameEntry'],
       ['createEntry', ['projectId', 'relativePath', 'kind'], 'notes.CreatedEntry'],
+      ['searchNotes', ['projectId', 'query'], 'notes.SearchResults'],
     ]
 
     function buildContribution() {
@@ -403,6 +434,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         gitBlame: (projectId, relativePath, line) => call('gitBlame', [projectId, relativePath, line]),
         createEntry: (projectId, relativePath, kind) =>
           call('createEntry', [projectId, relativePath, kind]),
+        searchNotes: (projectId, query) => call('searchNotes', [projectId, query]),
       }
     }
 
@@ -1342,6 +1374,10 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       const [blame, setBlame] = React.useState(null)
       const [lineEntry, setLineEntry] = React.useState(null)
       const [viewTarget, setViewTarget] = React.useState('')
+      const [searchQuery, setSearchQuery] = React.useState('')
+      const [searchResult, setSearchResult] = React.useState(null)
+      const [searching, setSearching] = React.useState(false)
+      const [hitKey, setHitKey] = React.useState(null)
       const [creating, setCreating] = React.useState(null)
       const [viewMode, setViewMode] = React.useState('edit')
       const [bottomHeight, setBottomHeight] = React.useState(null)
@@ -1446,6 +1482,11 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             setNotice(null)
             setCreating(null)
             setViewTarget('')
+            // Hits belong to the project that produced them, so switching
+            // folders must not leave another folder's results on screen.
+            setSearchQuery('')
+            setSearchResult(null)
+            setHitKey(null)
             session.filePath = null
             session.draft = null
             session.dirty = false
@@ -1601,6 +1642,111 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           cancelled = true
         }
       }, [refreshProjects, openProject, openFile, loadPath])
+
+      /**
+       * The search box runs against the Host, not the tree it happens to have
+       * loaded: the tree only ever holds the folders the user unfolded, while a
+       * search has to reach every Markdown file under the root.
+       */
+      const searchTimer = React.useRef(null)
+      const searchSeq = React.useRef(0)
+
+      const runSearch = React.useCallback(
+        async (target, query) => {
+          if (target === null) return
+          const trimmed = typeof query === 'string' ? query.trim() : ''
+          const seq = (searchSeq.current += 1)
+          if (trimmed === '') {
+            setSearchResult(null)
+            setSearching(false)
+            return
+          }
+          setSearching(true)
+          try {
+            const value = await api.searchNotes(target.id, trimmed)
+            if (seq !== searchSeq.current) return
+            setSearchResult({
+              query: typeof value?.query === 'string' ? value.query : trimmed,
+              hits: Array.isArray(value?.hits) ? value.hits : [],
+              scanned: typeof value?.scanned === 'number' ? value.scanned : 0,
+              matched: typeof value?.matched === 'number' ? value.matched : 0,
+              truncated: value?.truncated === true,
+            })
+            setError(null)
+          } catch (caught) {
+            if (seq !== searchSeq.current) return
+            setSearchResult(null)
+            report(caught)
+          } finally {
+            if (seq === searchSeq.current) setSearching(false)
+          }
+        },
+        [api, report],
+      )
+
+      const onSearchInput = React.useCallback(
+        (event) => {
+          const next = event.target.value
+          setSearchQuery(next)
+          if (searchTimer.current !== null) window.clearTimeout(searchTimer.current)
+          if (project === null) return
+          if (next.trim() === '') {
+            // Bumping the sequence discards an answer that is already in flight,
+            // otherwise clearing the box can be undone by a late result.
+            searchSeq.current += 1
+            setSearchResult(null)
+            setSearching(false)
+            return
+          }
+          const target = project
+          searchTimer.current = window.setTimeout(() => {
+            searchTimer.current = null
+            void runSearch(target, next)
+          }, 200)
+        },
+        [project, runSearch],
+      )
+
+      const clearSearch = React.useCallback(() => {
+        if (searchTimer.current !== null) window.clearTimeout(searchTimer.current)
+        searchTimer.current = null
+        searchSeq.current += 1
+        setSearchQuery('')
+        setSearchResult(null)
+        setSearching(false)
+        setHitKey(null)
+      }, [])
+
+      /** 1-based line number to a 0-based character offset inside the opened file. */
+      const lineOffset = (text, line) => {
+        const body = typeof text === 'string' ? text : ''
+        let offset = 0
+        for (let index = 1; index < line; index += 1) {
+          const next = body.indexOf('\n', offset)
+          if (next === -1) return body.length
+          offset = next + 1
+        }
+        return offset
+      }
+
+      /** Opening a hit reuses the normal file path so saving and blame still work. */
+      const openHit = React.useCallback(
+        async (hit) => {
+          if (project === null) return
+          setHitKey(`${hit.path}:${hit.line}`)
+          const opened = await openFile(project, hit.path)
+          if (!opened) return
+          setViewMode('edit')
+          const area = codeAreaRef.current
+          if (area === null) return
+          // The textarea already holds the file that was just read, so the
+          // offset is measured on its own value rather than on stale state.
+          const offset = lineOffset(typeof area.value === 'string' ? area.value : '', hit.line)
+          if (typeof area.focus === 'function') area.focus()
+          if (typeof area.setSelectionRange === 'function') area.setSelectionRange(offset, offset)
+        },
+        [openFile, project],
+      )
 
       const importFolder = React.useCallback(async () => {
         try {
@@ -2082,6 +2228,92 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         )
       }
 
+      /**
+       * One hit row: the file and line above the matched text, with the matched
+       * run highlighted. `column` is an offset inside `text`, not inside the file
+       * line, because the Host clips long lines to a window before returning.
+       */
+      const hitRow = (hit, index) => {
+        const text = typeof hit?.text === 'string' ? hit.text : ''
+        const query = searchResult?.query ?? ''
+        const at = typeof hit?.column === 'number' ? hit.column : -1
+        const end = at < 0 ? at : Math.min(text.length, at + query.length)
+        const body = []
+        if (at > 0) body.push(text.slice(0, at))
+        if (at >= 0 && end > at) {
+          body.push(h('span', { key: 'mark', className: 'lmn-hit-mark' }, text.slice(at, end)))
+        }
+        if (at < 0) body.push(text)
+        else if (end < text.length) body.push(text.slice(end))
+        const key = `${hit.path}:${hit.line}`
+        return h(
+          'button',
+          {
+            key: `${key}:${index}`,
+            className: hitKey === key ? 'lmn-hit is-selected' : 'lmn-hit',
+            title: `${hit.path}:${hit.line}`,
+            onClick: () => void openHit(hit),
+          },
+          h(
+            'span',
+            { className: 'lmn-hit-path' },
+            h('span', { className: 'lmn-hit-line' }, String(hit.line)),
+            hit.path,
+          ),
+          h('span', { className: 'lmn-hit-text' }, body),
+        )
+      }
+
+      const searchBox = h(
+        'div',
+        { className: 'lmn-search' },
+        h('input', {
+          className: 'lmn-search-input',
+          type: 'search',
+          value: searchQuery,
+          placeholder: t('panel.searchPlaceholder'),
+          'aria-label': t('panel.searchPlaceholder'),
+          spellCheck: false,
+          onChange: onSearchInput,
+          onKeyDown: (event) => {
+            if (event.key === 'Escape') clearSearch()
+          },
+        }),
+        searchQuery === ''
+          ? null
+          : h(
+              'button',
+              {
+                className: 'lmn-search-clear',
+                title: t('panel.searchClear'),
+                'aria-label': t('panel.searchClear'),
+                onClick: clearSearch,
+              },
+              'x',
+            ),
+      )
+
+      /**
+       * While a query is typed the list is replaced by its hits; clearing the box
+       * brings the explorer back untouched.
+       */
+      const searchList = (() => {
+        if (project === null) return h('div', { className: 'lmn-search-note' }, t('panel.pickProject'))
+        if (searching) return h('div', { className: 'lmn-search-note' }, t('panel.searching'))
+        if (searchResult === null) return h('div', { className: 'lmn-search-note' }, t('panel.searchHint'))
+        const hits = searchResult.hits
+        if (hits.length === 0) return h('div', { className: 'lmn-search-note' }, t('panel.searchEmpty'))
+        const stats = `${searchResult.matched} ${t('panel.searchHits')} · ${searchResult.scanned} ${t('panel.searchScanned')}${
+          searchResult.truncated ? ` · ${t('panel.searchTruncated')}` : ''
+        }`
+        return h(
+          'div',
+          { className: 'lmn-hits' },
+          h('div', { key: 'stats', className: 'lmn-search-note' }, stats),
+          hits.map((hit, index) => hitRow(hit, index)),
+        )
+      })()
+
       const side = h(
         'aside',
         { className: 'lmn-side' },
@@ -2099,12 +2331,15 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             busy === 'import' ? t('panel.importing') : t('panel.import'),
           ),
         ),
+        searchBox,
         h(
           'div',
           { className: 'lmn-list lmn-tree' },
-          projects.length === 0
-            ? h('div', { className: 'lmn-note' }, t('panel.empty'))
-            : projects.map((item) => projectNode(item)),
+          searchQuery.trim() !== ''
+            ? searchList
+            : projects.length === 0
+              ? h('div', { className: 'lmn-note' }, t('panel.empty'))
+              : projects.map((item) => projectNode(item)),
         ),
       )
 

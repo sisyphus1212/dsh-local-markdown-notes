@@ -86,10 +86,18 @@ const NOTES_SOURCE = 'local-notes'
       'panel.chatUnavailable': '当前没有可用的会话空间。',
       'panel.chatBusy': '新会话的消息框暂时不能接收，稍后再试。',
       'panel.chatFailed': '新建会话失败，请稍后再试。',
+      'panel.exportHtml': '导出 HTML',
+      'panel.exporting': '正在导出…',
+      'panel.exported': '已导出 HTML',
+      'panel.exportFailed': '导出失败，请重试',
     }
 
     const EN = {
       'panel.title': 'Local notes',
+      'panel.exportHtml': 'Export HTML',
+      'panel.exporting': 'Exporting…',
+      'panel.exported': 'Exported HTML',
+      'panel.exportFailed': 'Export failed, please retry',
       'panel.import': 'Import folder',
       'panel.importing': 'Choosing…',
       'panel.empty': 'No folder imported yet.',
@@ -413,6 +421,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       ['removeProject', ['projectId'], 'notes.Removed'],
       ['listEntries', ['projectId', 'relativePath'], 'notes.EntryList'],
       ['readFile', ['projectId', 'relativePath'], 'notes.FileContent'],
+      ['readAsset', ['projectId', 'relativePath'], 'notes.FileAsset'],
       ['writeFile', ['projectId', 'relativePath', 'content', 'expectedVersion'], 'notes.FileContent'],
       ['gitStatus', ['projectId'], 'notes.GitStatus'],
       ['gitDiff', ['projectId', 'relativePath'], 'notes.GitDiff'],
@@ -502,6 +511,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         removeProject: (projectId) => call('removeProject', [projectId]),
         listEntries: (projectId, relativePath) => call('listEntries', [projectId, relativePath ?? '']),
         readFile: (projectId, relativePath) => call('readFile', [projectId, relativePath]),
+        readAsset: (projectId, relativePath) => call('readAsset', [projectId, relativePath]),
         writeFile: (projectId, relativePath, content, expectedVersion) =>
           call('writeFile', [projectId, relativePath, content, expectedVersion ?? null]),
         gitStatus: (projectId) => call('gitStatus', [projectId]),
@@ -3019,6 +3029,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const [resizing, setResizing] = React.useState(false)
       const bottomRef = React.useRef(null)
       const resizeRef = React.useRef(null)
+      // The node the export copies: the very tree the reader is looking at, so
+      // formulas and diagrams leave with it already typeset.
+      const previewRef = React.useRef(null)
 
       /**
        * Auto-save follows VS Code's `files.autoSave: afterDelay`.
@@ -4470,6 +4483,54 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const bottomStyle =
         bottomHeight === null ? undefined : { height: `${bottomHeight}px`, maxHeight: 'none' }
 
+      /**
+       * Export the preview as one self-contained file.
+       *
+       * The reader gets what is on screen — typeset formulas, drawn diagrams,
+       * inlined pictures — because the export copies the preview node instead
+       * of re-rendering the Markdown. In edit mode it shows the preview for the
+       * copy and switches back, so the button works from either mode.
+       */
+      async function exportHtml() {
+        if (file === null) return
+        const previous = viewMode
+        if (previous !== 'preview') setViewMode('preview')
+        setNotice('panel.exporting')
+        const node = await settledPreview(previewRef, Date.now() + 1500)
+        if (previous !== 'preview') setViewMode(previous)
+        if (node === null || node === undefined) {
+          setNotice('panel.exportFailed')
+          return
+        }
+        const clone = node.cloneNode(true)
+        await inlineImages(clone, {
+          dir: parentOf(file.path),
+          read: project === null
+            ? null
+            : function (relative) { return api.readAsset(project.id, relative) },
+        })
+        const name = exportNameFor(file.path)
+        const css = [EXPORT_PAGE_CSS, STYLE, katexStyleText()]
+          .filter(function (part) { return part !== '' })
+          .join('\n')
+        try {
+          downloadText(
+            buildStandaloneHtml({
+              title: name,
+              body: clone.innerHTML,
+              css: css,
+              lang: typeof document === 'undefined' || document.documentElement === undefined
+                ? 'zh-CN'
+                : String(document.documentElement.lang || 'zh-CN'),
+            }),
+            name + '.html',
+          )
+          setNotice('panel.exported')
+        } catch (error) {
+          setNotice('panel.exportFailed')
+        }
+      }
+
       const editor =
         file === null
           ? h(
@@ -4501,7 +4562,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                   ? draft === ''
                     ? h('div', { className: 'lmn-render-empty' }, t('panel.previewEmpty'))
                     : h('div', { className: 'lmn-preview' },
-                        h('div', { className: 'lmn-render' }, renderMarkdown(draft)),
+                        h('div', { className: 'lmn-render', ref: previewRef }, renderMarkdown(draft)),
                         (() => {
                           const entries = outlineOf(String(draft).split(/\r?\n/))
                           if (entries.length < 2) return null
@@ -4692,6 +4753,8 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             ),
             notice === 'panel.staleTitle' ? h('span', { className: 'lmn-note' }, t('panel.staleTitle')) : null,
             notice === 'panel.saved' ? h('span', { className: 'lmn-note' }, t('panel.saved')) : null,
+            notice === 'panel.exported' ? h('span', { className: 'lmn-note' }, t('panel.exported')) : null,
+            notice === 'panel.exportFailed' ? h('span', { className: 'lmn-note' }, t('panel.exportFailed')) : null,
             // Said quietly next to the reload button rather than as an error
             // banner: the session came back, only the file it named did not.
             notice === 'panel.restoreMissing'
@@ -4721,6 +4784,16 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                 onClick: () => file !== null && project !== null && void openFile(project, file.path),
               },
               t('panel.reload'),
+            ),
+            h(
+              'button',
+              {
+                className: 'lmn-btn',
+                disabled: file === null || busy === 'read',
+                title: t('panel.exportHtml'),
+                onClick: () => void exportHtml(),
+              },
+              t('panel.exportHtml'),
             ),
             h(
               'button',
@@ -4826,6 +4899,165 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         }
       }
       return undefined
+    }
+
+    /** Escape the four characters that would otherwise end a text run. */
+    function escapeHtmlText(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+    }
+
+    /**
+     * The page an export lives in.
+     *
+     * The preview borrows the panel's stylesheet, which is written against the
+     * app's theme variables, so an export carrying only the markup would lose
+     * headings, tables and code colour. `STYLE` therefore goes in whole and
+     * these rules only add the page around it: one readable column, no app
+     * chrome, and the outline hidden because it repeats the headings it links
+     * to.
+     */
+    const EXPORT_PAGE_CSS = [
+      'html{background:#fff}',
+      'body{margin:0;background:#fff;color:#1f2328;font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif}',
+      '.lmn-export{max-width:860px;margin:0 auto;padding:36px 28px 72px}',
+      '.lmn-export a{color:#2f6fe0}',
+      '.lmn-export .lmn-outline{display:none}',
+    ].join('\n')
+
+    /** One complete document: markup, page CSS and the panel stylesheet. */
+    function buildStandaloneHtml(options) {
+      const title = String((options && options.title) || '').trim() || 'note'
+      const lang = String((options && options.lang) || 'zh-CN')
+      const body = String((options && options.body) || '')
+      const css = String((options && options.css) || '')
+      return [
+        '<!doctype html>',
+        '<html lang="' + escapeHtmlText(lang) + '">',
+        '<head>',
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        '<title>' + escapeHtmlText(title) + '</title>',
+        '<style>' + css + '</style>',
+        '</head>',
+        '<body>',
+        '<main class="lmn-export lmn-render">' + body + '</main>',
+        '</body>',
+        '</html>',
+        '',
+      ].join('\n')
+    }
+
+    /** `notes/handbook.md` becomes `handbook`, safe for a file name. */
+    function exportNameFor(filePath) {
+      const parts = String(filePath || '').split('/')
+      const base = parts.length === 0 ? '' : parts[parts.length - 1]
+      const stem = base.replace(/\.md$/i, '')
+      const clean = stem.replace(/[\\/:*?"<>|]/g, '-').trim()
+      return clean === '' ? 'note' : clean
+    }
+
+    /** Save one string through the browser's own download path. */
+    function downloadText(text, name) {
+      const blob = new Blob([text], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = name
+      anchor.style.display = 'none'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(function () { URL.revokeObjectURL(url) }, 4000)
+    }
+
+    /** The project-relative path a relative image address points at. */
+    function assetPathFor(dir, src) {
+      const cleaned = String(src).split('#')[0].split('?')[0]
+      let decoded = cleaned
+      try { decoded = decodeURI(cleaned) } catch (error) { decoded = cleaned }
+      const parts = String(dir === undefined || dir === null ? '' : dir) === ''
+        ? []
+        : String(dir).split('/').filter(function (part) { return part !== '' })
+      decoded.split('/').forEach(function (part) {
+        if (part === '' || part === '.') return
+        if (part === '..') {
+          if (parts.length > 0) parts.pop()
+          return
+        }
+        parts.push(part)
+      })
+      return parts.join('/')
+    }
+
+    /**
+     * Every image the preview still points at, turned into its own bytes.
+     *
+     * A picture that lives beside the note is read through the Host, because the
+     * page cannot fetch a project path; one that lives on the web is fetched and
+     * keeps its address when the network or the server refuses. Either way the
+     * export never loses a picture silently — an unreadable one stays a link.
+     */
+    async function inlineImages(root, options) {
+      if (root === null || root === undefined || typeof root.querySelectorAll !== 'function') return
+      const settings = options || {}
+      const images = Array.from(root.querySelectorAll('img'))
+      await Promise.all(images.map(async function (node) {
+        const src = node.getAttribute('src') || ''
+        if (src === '' || src.startsWith('data:')) return
+        const absolute = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(src) || src.startsWith('//')
+        if (!absolute) {
+          if (typeof settings.read !== 'function') return
+          try {
+            const asset = await settings.read(assetPathFor(settings.dir, src))
+            if (asset && typeof asset.base64 === 'string' && asset.base64 !== '') {
+              node.setAttribute('src', 'data:' + String(asset.mime || 'image/png') + ';base64,' + asset.base64)
+            }
+          } catch (error) {
+            // Keep the relative address: it still resolves for a reader who has
+            // the note folder next to the export.
+          }
+          return
+        }
+        try {
+          const response = await fetch(src, { credentials: 'same-origin' })
+          if (response.ok !== true) return
+          const blob = await response.blob()
+          const dataUrl = await new Promise(function (resolve, reject) {
+            const reader = new FileReader()
+            reader.onload = function () { resolve(String(reader.result || '')) }
+            reader.onerror = function () { reject(reader.error) }
+            reader.readAsDataURL(blob)
+          })
+          if (dataUrl.startsWith('data:')) node.setAttribute('src', dataUrl)
+        } catch (error) {
+          // An image the page cannot read keeps its address: a link that may
+          // break beats a paragraph that silently lost its picture.
+        }
+      }))
+    }
+
+    /** The stylesheet the maths chunk injects, so the export keeps type set. */
+    function katexStyleText() {
+      try {
+        const node = document.querySelector('style[data-lmn-katex]')
+        return node === null ? '' : String(node.textContent || '')
+      } catch (error) {
+        return ''
+      }
+    }
+
+    /** Wait for the preview to exist and for its formulas to be typeset. */
+    async function settledPreview(ref, deadline) {
+      while (Date.now() < deadline) {
+        const node = ref === null || ref === undefined ? null : ref.current
+        if (node !== null && node !== undefined && node.querySelectorAll('.lmn-md-math-raw').length === 0) return node
+        await new Promise(function (resolve) { setTimeout(resolve, 50) })
+      }
+      return ref === null || ref === undefined ? null : (ref.current || null)
     }
 
     /**
@@ -4979,6 +5211,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     }
 
     return {
+      // Pure pieces the tests reach without a DOM; the panel itself only calls
+      // them through `exportHtml` above.
+      __test: { buildStandaloneHtml, exportNameFor, escapeHtmlText, EXPORT_PAGE_CSS, inlineImages, assetPathFor },
       inject: ['slots', 'locale', 'remote'],
       async apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'local-markdown-notes: dictionaries')

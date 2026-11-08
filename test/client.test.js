@@ -463,7 +463,7 @@ test('client apply registers the locale dictionary, style, remote mount and both
 
   assert.equal(record.mounts.length, 1)
   assert.equal(record.mounts[0].package, '@local/local-markdown-notes')
-  assert.equal(record.mounts[0].descriptors.length, 14)
+  assert.equal(record.mounts[0].descriptors.length, 15)
 
   assert.deepEqual([...record.injected], ['sidebar.panellist', 'main'])
   assert.equal(record.slots.length, 2)
@@ -621,6 +621,7 @@ test('every mounted descriptor uses a strict codec on parameters and result', as
       'removeProject',
       'listEntries',
       'readFile',
+      'readAsset',
       'writeFile',
       'gitStatus',
       'gitDiff',
@@ -3728,4 +3729,135 @@ test('a note with a single heading gets no side outline', async () => {
   await click(panel.runtime, findAll(seg, 'lmn-btn')[1])
 
   assert.ok(!findOne(panel.runtime.tree(), 'lmn-outline'), 'one heading is not worth a column')
+})
+
+test('the toolbar offers an HTML export next to save', async () => {
+  const { namespace } = treeNamespace()
+  const panel = await mountPanel({ namespace })
+
+  const buttons = findAll(panel.runtime.tree(), 'lmn-btn')
+  const labels = buttons.map((button) => textsOf(button))
+  const label = panel.t('panel.exportHtml')
+  const index = labels.indexOf(label)
+  assert.ok(index >= 0, 'the export button sits in the toolbar: ' + labels.join(' | '))
+
+  const button = buttons[index]
+  assert.equal(button.props.disabled, true, 'it stays disabled until a note is open')
+  assert.equal(button.props.title, label, 'the button names itself on hover')
+})
+
+test('an export is one complete document with its styling inlined', () => {
+  const { plugin } = loadClient()
+  const html = plugin.__test.buildStandaloneHtml({
+    title: 'handbook & notes',
+    body: '<h1 id="lmn-h-0">标题</h1><img src="data:image/png;base64,AA">',
+    css: '.lmn-md-heading{font-weight:700}',
+    lang: 'zh-CN',
+  })
+
+  assert.ok(html.startsWith('<!doctype html>'), 'the file declares its doctype')
+  assert.ok(html.includes('<meta charset="utf-8">'), 'the file declares its encoding')
+  assert.ok(html.includes('<meta name="viewport"'), 'the file opens at a readable width on a phone')
+  assert.ok(html.includes('<html lang="zh-CN">'), 'the file keeps the language')
+  assert.ok(html.includes('<title>handbook &amp; notes</title>'), 'the title is escaped, not injected')
+  assert.ok(
+    html.includes('<style>.lmn-md-heading{font-weight:700}</style>'),
+    'the stylesheet travels inside the file',
+  )
+  assert.ok(html.includes('<main class="lmn-export lmn-render">'), 'the body is wrapped for the page rules')
+  assert.ok(html.includes('id="lmn-h-0"'), 'heading ids survive, so in-page links still work')
+  assert.ok(html.includes('src="data:image/png;base64,AA"'), 'an inlined picture stays inlined')
+  assert.ok(!html.includes('<script'), 'an export carries no script')
+  assert.ok(!/src="https?:/.test(html), 'nothing is fetched from outside the file')
+})
+
+test('an export is named after its note and carries no folder path', () => {
+  const { plugin } = loadClient()
+  const name = plugin.__test.exportNameFor
+
+  assert.equal(name('notes/handbook.md'), 'handbook')
+  assert.equal(name('drafts/a.b/c.markdown'), 'c.markdown')
+  assert.equal(name('weird:name?.md'), 'weird-name-')
+  assert.equal(name(''), 'note')
+  assert.ok(plugin.__test.EXPORT_PAGE_CSS.includes('.lmn-export{'), 'the page rules are part of the export')
+})
+
+test('images that already carry their bytes are not fetched again', async () => {
+  const { plugin } = loadClient()
+  const attributes = { src: 'data:image/png;base64,AA' }
+  const root = {
+    querySelectorAll: () => [
+      {
+        getAttribute: (name) => attributes[name] ?? null,
+        setAttribute: (name, value) => {
+          attributes[name] = value
+        },
+      },
+    ],
+  }
+
+  await plugin.__test.inlineImages(root)
+  assert.equal(attributes.src, 'data:image/png;base64,AA', 'an inlined picture is left alone')
+})
+
+
+test('a relative picture address is resolved against the folder the note sits in', () => {
+  const { plugin } = loadClient()
+  const path = plugin.__test.assetPathFor
+
+  assert.equal(path('docs', 'img/a.png'), 'docs/img/a.png')
+  assert.equal(path('docs/sub', '../a.png'), 'docs/a.png')
+  assert.equal(path('docs', './a%20b.png'), 'docs/a b.png')
+  assert.equal(path('', 'a.png'), 'a.png')
+  assert.equal(path(undefined, '/a.png'), 'a.png', 'a leading slash cannot leave the project')
+  assert.equal(path('docs', '../../../etc/passwd'), 'etc/passwd', 'the walk stops at the project root')
+})
+
+test('a picture next to the note is inlined through the Host', async () => {
+  const { plugin } = loadClient()
+  const attributes = { src: '../img/logo.PNG' }
+  const asked = []
+  const node = {
+    getAttribute: (name) => attributes[name] ?? null,
+    setAttribute: (name, value) => {
+      attributes[name] = value
+    },
+  }
+
+  await plugin.__test.inlineImages(
+    { querySelectorAll: () => [node] },
+    {
+      dir: 'notes/drafts',
+      read: async (relative) => {
+        asked.push(relative)
+        return { mime: 'image/png', base64: 'QUJD' }
+      },
+    },
+  )
+
+  assert.deepEqual(asked, ['notes/img/logo.PNG'], 'the Host reads the path beside the note')
+  assert.equal(attributes.src, 'data:image/png;base64,QUJD', 'the export carries the bytes')
+})
+
+test('an unreadable picture keeps its address instead of vanishing', async () => {
+  const { plugin } = loadClient()
+  const attributes = { src: 'img/missing.png' }
+  const node = {
+    getAttribute: (name) => attributes[name] ?? null,
+    setAttribute: (name, value) => {
+      attributes[name] = value
+    },
+  }
+
+  await plugin.__test.inlineImages(
+    { querySelectorAll: () => [node] },
+    {
+      dir: '',
+      read: async () => {
+        throw new Error('missing')
+      },
+    },
+  )
+
+  assert.equal(attributes.src, 'img/missing.png', 'a link that may break beats a lost picture')
 })

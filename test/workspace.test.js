@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { normalizeRelativePath } from '../lib/pure.js'
-import { createEntry, deleteEntry, readFile, listEntries, renameEntry, resolveEntry, writeFile } from '../lib/workspace.js'
+import { createEntry, deleteEntry, readAsset, readFile, listEntries, renameEntry, resolveEntry, writeFile } from '../lib/workspace.js'
 
 /** A minimal in-memory filesystem: paths are plain POSIX-ish strings. */
 function fakeFs(initial, options = {}) {
@@ -90,6 +90,13 @@ function fakeFs(initial, options = {}) {
       const key = deref(target.targetKey ?? target)
       if (!files.has(key)) throw new Error(`ENOENT ${key}`)
       return files.get(key)
+    },
+    async readBytes(target, signal, maxBytes) {
+      const key = deref(target.targetKey ?? target)
+      if (!files.has(key)) throw new Error(`ENOENT ${key}`)
+      const bytes = Buffer.from(files.get(key), 'utf8')
+      if (maxBytes !== undefined && bytes.length > maxBytes) throw new Error('FS_TOO_LARGE')
+      return bytes
     },
     async writeText(target, content, expected, signal, sandboxPolicy) {
       const key = deref(target.targetKey ?? target)
@@ -566,4 +573,28 @@ test('renameEntry renames a folder through the injected rename', async () => {
   assert.deepEqual(renamed, { path: 'new', from: 'old', kind: 'directory' })
   assert.deepEqual(calls, [['C:/notes/old', 'C:/notes/new']])
   assert.equal(fs.moves.length, 0, 'a folder never goes through moveFile')
+})
+
+
+test('readAsset hands back the bytes of a picture beside the note', async () => {
+  const fs = fakeFs({ 'C:/notes/notes/a.md': '# a', 'C:/notes/notes/logo.png': 'PNGDATA' })
+
+  const asset = await readAsset(fs, 'C:/notes', 'notes/logo.png')
+
+  assert.equal(asset.path, 'notes/logo.png')
+  assert.equal(asset.mime, 'image/png')
+  assert.equal(asset.size, 7)
+  assert.equal(asset.base64, Buffer.from('PNGDATA', 'utf8').toString('base64'))
+  assert.equal(Buffer.from(asset.base64, 'base64').toString('utf8'), 'PNGDATA', 'the bytes survive the round trip')
+})
+
+test('readAsset refuses what it cannot inline and what sits outside the project', async () => {
+  const fs = fakeFs(
+    { 'C:/notes/a.md': '# a', 'C:/notes/notes.txt': 'plain', 'C:/outside/logo.png': 'PNG' },
+    { directories: ['C:/notes'], links: { 'C:/notes/escape.png': 'C:/outside/logo.png' } },
+  )
+
+  await assert.rejects(() => readAsset(fs, 'C:/notes', 'a.md'), /not a picture this panel can inline/)
+  await assert.rejects(() => readAsset(fs, 'C:/notes', 'escape.png'), /outside the project root/)
+  await assert.rejects(() => readAsset(fs, 'C:/notes', 'missing.png'), /no longer exists/)
 })

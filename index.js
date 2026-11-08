@@ -11,6 +11,7 @@
  */
 
 import { NotesRemote, createNotesRemote, markRemoteMethods } from './lib/service.js'
+import { registerNotesTools } from './lib/tools.js'
 
 export const name = 'local-markdown-notes'
 
@@ -21,8 +22,12 @@ export const inject = ['storageDomain', 'fs', 'subprocess', 'directoryPicker']
  */
 export async function apply(ctx) {
   markRemoteMethods(NotesRemote)
-  const { domain } = await createNotesRemote(ctx)
+  const { remote, domain } = await createNotesRemote(ctx)
   ctx.effect(() => () => domain.close(), 'local-markdown-notes: close project registry')
+  // The Agent talks to the same `NotesRemote` the panel calls, so a note written
+  // in conversation passes the same containment check and version guard as one
+  // saved by hand.
+  registerNotesTools(ctx, remote)
 }
 
 export { NotesRemote, markRemoteMethods }

@@ -1806,7 +1806,7 @@ test('the preview toggle renders markdown as elements and replaces the textarea'
     '| --- | --- |',
     '| 1 | 2 |',
     '',
-    '~~strike~~ stays literal',
+    '~~strike~~ and a <span>raw html</span> tag stays literal',
     '',
   ].join('\n')
   let area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
@@ -1847,8 +1847,9 @@ test('the preview toggle renders markdown as elements and replaces the textarea'
   assert.ok(table, 'a GFM table becomes a table element')
   assert.equal(countType(table, 'th'), 2, 'the header row keeps both cells')
   assert.equal(countType(table, 'td'), 2, 'the body row keeps both cells')
+  assert.equal(countType(render, 'del'), 1, '~~text~~ becomes a del element')
   assert.ok(
-    textsOf(render).includes('~~strike~~ stays literal'),
+    textsOf(render).includes('a <span>raw html</span> tag stays literal'),
     'markup the renderer does not know is shown as written, never dropped',
   )
   assert.ok(
@@ -3475,4 +3476,256 @@ test('a message box that throws on the chip is reported as a failure', async () 
     textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatFailed`),
     'a throwing shell never breaks the panel',
   )
+})
+
+test('the preview renders callouts, tasks, nested lists, images, alignment and footnotes', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: 'features.md', name: 'features.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('features.md')),
+  )
+
+  const markdown = [
+    '> [!WARNING] 小心',
+    '> 这里有 **警告**。',
+    '',
+    '- [ ] 待办',
+    '- [x] 已完成',
+    '- 父项',
+    '  - 子项',
+    '',
+    '![示意图](https://example.com/a.png)',
+    '',
+    '| 左 | 中 | 右 |',
+    '| :-- | :-: | --: |',
+    '| 1 | 2 | 3 |',
+    '',
+    '正文引用[^a]和[^b]。',
+    '',
+    '[^a]: 第一条脚注。',
+    '[^b]: 第二条脚注。',
+    '',
+  ].join('\n')
+
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: markdown } })
+  await panel.runtime.flush()
+
+  const seg = findOne(panel.runtime.tree(), 'lmn-seg')
+  await click(panel.runtime, findAll(seg, 'lmn-btn')[1])
+
+  const render = findOne(panel.runtime.tree(), 'lmn-render')
+  assert.ok(render, 'preview renders a body')
+
+  const callout = findAll(render, 'lmn-md-callout')[0]
+  assert.ok(callout, 'a [!WARNING] quote becomes a callout')
+  assert.ok(String(callout.props.className).includes('is-warning'), 'the callout keeps its kind')
+  assert.ok(textsOf(callout).includes('小心'), 'the callout keeps its title')
+
+  const boxes = findAll(render, 'lmn-md-task')
+  assert.equal(boxes.length, 2, 'both task items carry a checkbox')
+  assert.equal(boxes[1].props.checked, true, 'a checked task is checked')
+  assert.equal(boxes[0].props.checked, false, 'an open task stays open')
+
+  const nested = findAll(render, 'lmn-md-list')
+  assert.ok(nested.length >= 2, 'a nested list becomes a list inside a list item')
+  assert.ok(textsOf(render).includes('子项'), 'the nested item keeps its text')
+
+  const image = seekType(render, 'img')
+  assert.ok(image, 'an image becomes an img element')
+  assert.equal(image.props.src, 'https://example.com/a.png', 'the image keeps its source')
+  assert.equal(image.props.alt, '示意图', 'the image keeps its alt text')
+
+  const headers = []
+  const collectHeaders = (node) => {
+    if (node === null || node === undefined || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      for (const child of node) collectHeaders(child)
+      return
+    }
+    if (node.type === 'th') headers.push(node)
+    collectHeaders(node.children)
+  }
+  collectHeaders(render)
+  assert.deepEqual(
+    headers.map((cell) => cell.props.style?.textAlign ?? ''),
+    ['left', 'center', 'right'],
+    'the separator row decides each column alignment',
+  )
+
+  assert.equal(findAll(render, 'lmn-md-fn-ref').length, 2, 'both references render a number')
+  const footnotes = findAll(render, 'lmn-md-footnote')
+  assert.equal(footnotes.length, 2, 'each referenced definition is listed once')
+  assert.ok(textsOf(footnotes[0]).includes('第一条脚注'), 'the footnote body survives')
+  assert.equal(
+    footnotes[0].props.id,
+    'lmn-fn-a',
+    'a footnote is addressable by the name the note used',
+  )
+})
+
+test('formulas and diagrams fall back to their source when no chunk is loaded', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: 'math.md', name: 'math.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('math.md')),
+  )
+
+  const markdown = [
+    '行内公式 $E = mc^2$ 与价格 $5。',
+    '',
+    '$$',
+    '\\int_0^1 x \\, dx = \\frac12',
+    '$$',
+    '',
+    '```mermaid',
+    'graph TD',
+    '  A[开始] --> B[结束]',
+    '```',
+    '',
+  ].join('\n')
+
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: markdown } })
+  await panel.runtime.flush()
+
+  const seg = findOne(panel.runtime.tree(), 'lmn-seg')
+  await click(panel.runtime, findAll(seg, 'lmn-btn')[1])
+
+  const render = findOne(panel.runtime.tree(), 'lmn-render')
+  // A math node and a diagram node are components, so the static tree keeps
+  // their description: the TeX, the display flag and the diagram source.
+  const collected = []
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child)
+      return
+    }
+    collected.push(node)
+    walk(node.children)
+  }
+  walk(render)
+
+  const maths = collected.filter((node) => typeof node.props?.tex === 'string')
+  assert.equal(maths.length, 2, 'inline and block formulas each become a math node')
+  assert.equal(maths[0].props.tex, 'E = mc^2', 'the inline formula keeps its TeX')
+  assert.equal(maths[0].props.display, false, 'an inline formula is not display mode')
+  assert.equal(maths[1].props.display, true, 'a fenced formula is display mode')
+  assert.ok(textsOf(render).includes('$5'), 'a lone dollar amount stays text')
+
+  const diagrams = collected.filter((node) => typeof node.props?.code === 'string')
+  assert.equal(diagrams.length, 1, 'a mermaid fence becomes one diagram node')
+  assert.ok(diagrams[0].props.code.includes('graph TD'), 'the diagram keeps its source')
+
+  assert.ok(
+    !JSON.stringify(render).includes('dangerouslySetInnerHTML'),
+    'a preview with no loaded chunk injects no raw HTML',
+  )
+})
+
+test('the preview lists every heading beside the note and honours [TOC]', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: 'outline.md', name: 'outline.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('outline.md')),
+  )
+
+  const markdown = [
+    '# 标题',
+    '',
+    '[TOC]',
+    '',
+    '## 小节一',
+    '',
+    '正文。',
+    '',
+    '### 更小的小节',
+    '',
+    '```',
+    '## 代码块里的井号不算标题',
+    '```',
+    '',
+  ].join('\n')
+
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: markdown } })
+  await panel.runtime.flush()
+
+  const seg = findOne(panel.runtime.tree(), 'lmn-seg')
+  await click(panel.runtime, findAll(seg, 'lmn-btn')[1])
+
+  const tree = panel.runtime.tree()
+  const outline = findOne(tree, 'lmn-outline')
+  assert.ok(outline, 'the preview carries a side outline')
+  const items = findAll(outline, 'lmn-outline-item')
+  assert.equal(items.length, 3, 'only real headings, not a fenced line, reach the outline')
+  assert.deepEqual(
+    items.map((item) => textsOf(item)),
+    ['标题', '小节一', '更小的小节'],
+    'the outline keeps the heading order',
+  )
+  assert.ok(
+    String(findAll(outline, 'lmn-outline-item')[2].props.className).includes('is-level-3'),
+    'an h3 entry is indented as level three',
+  )
+
+  const headings = []
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child)
+      return
+    }
+    if (node.type === 'h1' || node.type === 'h2' || node.type === 'h3') headings.push(node)
+    walk(node.children)
+  }
+  walk(tree)
+  assert.deepEqual(
+    headings.map((heading) => heading.props.id),
+    ['lmn-h-0', 'lmn-h-1', 'lmn-h-2'],
+    'each heading carries the anchor the outline points at',
+  )
+
+  const toc = findOne(tree, 'lmn-md-toc')
+  assert.ok(toc, 'a [TOC] line becomes a contents list')
+  const tocItems = findAll(toc, 'lmn-outline-item')
+  assert.deepEqual(
+    tocItems.map((item) => item.props.href),
+    ['#lmn-h-1', '#lmn-h-2'],
+    'the in-note contents skips the title and links to the rest',
+  )
+
+  // Clicking an entry asks the document to scroll; the panel has no such anchor
+  // in the harness, so the click must simply not throw.
+  await click(panel.runtime, tocItems[0])
+})
+
+test('a note with a single heading gets no side outline', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: 'short.md', name: 'short.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('short.md')),
+  )
+
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: '# 只有一个标题\n\n正文。' } })
+  await panel.runtime.flush()
+
+  const seg = findOne(panel.runtime.tree(), 'lmn-seg')
+  await click(panel.runtime, findAll(seg, 'lmn-btn')[1])
+
+  assert.ok(!findOne(panel.runtime.tree(), 'lmn-outline'), 'one heading is not worth a column')
 })

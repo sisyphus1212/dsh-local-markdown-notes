@@ -58,6 +58,7 @@ const NOTES_SOURCE = 'local-notes'
       'panel.namePlaceholder': '文件夹名',
       'panel.fileNamePlaceholder': '文件名.md',
       'panel.previewEmpty': '这个文件还没有内容。',
+    'panel.outline': '目录',
       'panel.edit': '编辑',
       'panel.preview': '预览',
       'panel.untitledName': '未命名',
@@ -134,6 +135,7 @@ const NOTES_SOURCE = 'local-notes'
       'panel.namePlaceholder': 'Folder name',
       'panel.fileNamePlaceholder': 'name.md',
       'panel.previewEmpty': 'This file is still empty.',
+    'panel.outline': 'Outline',
       'panel.edit': 'Edit',
       'panel.preview': 'Preview',
       'panel.untitledName': 'Untitled',
@@ -356,11 +358,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-md-heading{color:var(--dsw-alias-label-primary,CanvasText);font-weight:600}
 .lmn-md-quote{color:var(--dsw-alias-label-secondary,#61666b);font-style:italic}
 .lmn-md-link{color:var(--dsw-alias-link,#1667d9)}
-.lmn-md-em{font-style:italic}
+.lmn-md-em{font-style:italic}.lmn-md-image{max-width:100%;height:auto;border-radius:6px;margin:4px 0}.lmn-md-table{border-collapse:collapse;margin:10px 0;font-size:12px}.lmn-md-table th,.lmn-md-table td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;vertical-align:top}.lmn-md-table th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.03));font-weight:600}.lmn-md-list{margin:8px 0;padding-left:22px}.lmn-md-list .lmn-md-list{margin:2px 0 0}.lmn-md-task{margin:0 6px 0 0;vertical-align:-1px}.lmn-md-task-line{display:inline-flex;align-items:baseline;gap:2px}.lmn-md-task-done{opacity:.65;text-decoration:line-through}.lmn-md-callout{margin:10px 0;padding:8px 12px;border-left:3px solid var(--dsw-alias-brand-primary,#0f1115);border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.03))}.lmn-md-callout-title{font-weight:600;margin-bottom:2px}.lmn-md-callout-body{color:var(--dsw-alias-label-secondary,#61666b)}.lmn-md-callout.is-note{border-left-color:#2f6fe0}.lmn-md-callout.is-info{border-left-color:#2f6fe0}.lmn-md-callout.is-tip{border-left-color:#2e9e5b}.lmn-md-callout.is-important{border-left-color:#8b53d6}.lmn-md-callout.is-warning{border-left-color:#c9971b}.lmn-md-callout.is-caution{border-left-color:#c9971b}.lmn-md-callout.is-danger{border-left-color:#e0424a}.lmn-md-math{max-width:100%}.lmn-md-math.is-block{display:block;margin:10px 0;overflow-x:auto;overflow-y:hidden;text-align:center}.lmn-md-math-raw{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.lmn-md-diagram{margin:10px 0;overflow-x:auto;text-align:center}.lmn-md-diagram svg{max-width:100%;height:auto}.lmn-md-diagram-source{margin:10px 0}.lmn-md-diagram-error{padding:2px 0;font-size:11px;color:var(--dsw-alias-label-secondary,#61666b)}.lmn-md-quote-block{margin:8px 0}.lmn-md-fn-ref{font-size:11px;line-height:0;margin-left:1px}.lmn-md-fn-ref a{text-decoration:none;font-weight:600}.lmn-md-footnotes{margin-top:14px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#61666b)}.lmn-md-footnote{font-size:12px;line-height:18px}.lmn-md-footnote-back{margin-left:4px;text-decoration:none}.lmn-md-footnote-missing{color:#e0424a}
 .lmn-render table{margin:10px 0;border-collapse:collapse;font-size:12px}
 .lmn-render th,.lmn-render td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;text-align:left;vertical-align:top}
 .lmn-render th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));font-weight:600}
-.lmn-render-empty{padding:14px 0 14px 44px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
+ .lmn-preview{flex:1;min-height:0;display:flex;min-width:0}.lmn-outline{width:168px;flex:0 0 168px;min-height:0;overflow:auto;padding:14px 0 24px 12px;border-left:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06));font-size:12px;line-height:18px}.lmn-outline-item{display:block;padding:2px 6px;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lmn-outline-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,CanvasText)}.lmn-outline-item.is-level-2{padding-left:6px}.lmn-outline-item.is-level-3{padding-left:16px}.lmn-outline-item.is-level-4{padding-left:26px}.lmn-outline-item.is-level-5{padding-left:36px}.lmn-outline-item.is-level-6{padding-left:46px}.lmn-md-toc{margin:10px 0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.03));border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}.lmn-md-toc .lmn-outline-item{white-space:normal}.lmn-render-empty{padding:14px 0 14px 44px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
 `
 
     /**
@@ -729,19 +731,166 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 
     // --- Markdown renderer -------------------------------------------------
     // The preview is built from React elements, never from HTML strings, so a
-    // note's contents can never become markup the browser executes.
+    // note's contents can never become markup the browser executes. The two
+    // deliberate exceptions are math and diagrams: KaTeX and Mermaid emit
+    // their own sanitised markup, and both are fetched on demand, so a folder
+    // of plain notes never pays for them.
 
     const MD_FENCE = /^\s*(```|~~~)\s*([A-Za-z0-9_+#.-]*)/
     const MD_HEADING = /^(#{1,6})\s+(.*)$/
     const MD_RULE = /^\s*([-*_])(\s*\1){2,}\s*$/
     const MD_QUOTE = /^\s*>\s?(.*)$/
-    const MD_BULLET = /^\s*[-*+]\s+(.*)$/
-    const MD_ORDERED = /^\s*\d+[.)]\s+(.*)$/
-    const MD_TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
-    const MD_INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)|(\[[^\]]+\]\([^)\s]+\))/g
+    const MD_BULLET = /^[-*+]\s+(.*)$/
+    const MD_ORDERED = /^\d+[.)]\s+(.*)$/
+    const MD_TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/
+    const MD_FOOTNOTE_DEF = /^\[\^([^\]\s]+)\]:[ \t]*(.*)$/
+    const MD_CALLOUT = /^\[!(NOTE|TIP|INFO|IMPORTANT|WARNING|CAUTION|DANGER)\][ \t]*(.*)$/i
+    const MD_TASK = /^\[([ xX])\][ \t]+(.*)$/
+    const MD_MATH_OPEN = /^\s*\$\$[ \t]*(.*)$/
+    const MD_TOC = /^\s*\[toc\]\s*$/i
+    const MD_INLINE = /(`[^`\n]+`)|(!\[[^\]\n]*\]\([^)\s]+\))|(\[[^\]\n]*\]\([^)\s]+\))|(\[\^[^\]\n]+\])|(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(\$[^$\n]+\$)/g
 
-    /** Split one line of Markdown into text, code, strong, em and link leaves. */
-    function renderInline(text, keyPrefix) {
+    const CALLOUT_LABEL = {
+      note: '注意',
+      tip: '提示',
+      info: '信息',
+      important: '重要',
+      warning: '警告',
+      caution: '当心',
+      danger: '危险',
+    }
+
+    const MATH_CHUNK = './client.katex.js'
+    const MERMAID_CHUNK = './client.mermaid.js'
+
+    /** Load one package-local client chunk, or resolve null when unavailable. */
+    function loadClientChunk(spec) {
+      if (typeof require !== 'function' || typeof require.async !== 'function') {
+        return Promise.resolve(null)
+      }
+      return Promise.resolve(require.async(spec)).then((loaded) => loaded ?? null, () => null)
+    }
+
+    let katexChunk = null
+    let mermaidChunk = null
+
+    /** The KaTeX module, fetched once and shared by every formula on screen. */
+    function loadKatex() {
+      if (katexChunk === null) katexChunk = loadClientChunk(MATH_CHUNK)
+      return katexChunk
+    }
+
+    /** The Mermaid module, fetched once and shared by every diagram. */
+    function loadMermaid() {
+      if (mermaidChunk === null) mermaidChunk = loadClientChunk(MERMAID_CHUNK)
+      return mermaidChunk
+    }
+
+    /** Whether the app is in its dark theme, for diagram colours. */
+    function prefersDarkTheme() {
+      try {
+        const root = document?.documentElement
+        if (root === undefined || root === null) return false
+        const theme = String(root.dataset?.dsTheme ?? '')
+        return theme === 'dark'
+      } catch {
+        return false
+      }
+    }
+
+    /** Run one async effect and ignore the result if the node went away. */
+    function useLoaded(loader) {
+      const [loaded, setLoaded] = React.useState(null)
+      React.useEffect(() => {
+        let alive = true
+        loader().then((module) => {
+          if (alive && module !== null) setLoaded(module)
+        })
+        return () => {
+          alive = false
+        }
+      }, [])
+      return loaded
+    }
+
+    /** One formula: KaTeX typesetting, or the source until KaTeX arrives. */
+    function MathSpan({ tex, display, keyName }) {
+      const katex = useLoaded(loadKatex)
+      const [html, setHtml] = React.useState(null)
+      React.useEffect(() => {
+        if (katex === null) return
+        try {
+          setHtml(katex.renderToString(tex, {
+            displayMode: display,
+            throwOnError: false,
+            strict: 'ignore',
+            trust: false,
+            output: 'html',
+          }))
+        } catch {
+          setHtml(null)
+        }
+      }, [katex, tex, display])
+      if (html === null) {
+        return h('code', { key: keyName, className: 'lmn-md-math-raw' },
+          display ? `$$${tex}$$` : `$${tex}$`)
+      }
+      return h(display ? 'div' : 'span', {
+        key: keyName,
+        className: display ? 'lmn-md-math is-block' : 'lmn-md-math',
+        dangerouslySetInnerHTML: { __html: html },
+      })
+    }
+
+    /** One diagram: Mermaid renders its own SVG, and the source stays as a fallback. */
+    function MermaidDiagram({ code, keyName }) {
+      const mermaid = useLoaded(loadMermaid)
+      const [svg, setSvg] = React.useState(null)
+      const [failed, setFailed] = React.useState(false)
+      React.useEffect(() => {
+        if (mermaid === null) return
+        let alive = true
+        const id = `lmn-mermaid-${Math.random().toString(36).slice(2, 9)}`
+        try {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: prefersDarkTheme() ? 'dark' : 'default',
+            fontFamily: 'inherit',
+          })
+          Promise.resolve(mermaid.render(id, code)).then((result) => {
+            if (alive) setSvg(String(result?.svg ?? ''))
+          }, () => {
+            if (alive) setFailed(true)
+          })
+        } catch {
+          setFailed(true)
+        }
+        return () => {
+          alive = false
+        }
+      }, [mermaid, code])
+      if (svg !== null && svg !== '') {
+        return h('div', {
+          key: keyName,
+          className: 'lmn-md-diagram',
+          dangerouslySetInnerHTML: { __html: svg },
+        })
+      }
+      return h('div', { key: keyName, className: 'lmn-md-diagram-source' },
+        h('pre', null, h('code', null, code)),
+        failed ? h('div', { className: 'lmn-md-diagram-error' }, '这张图没能渲染，显示源码。') : null)
+    }
+
+    /** Keep one `$…$` from swallowing currency: `$5` and `$10` stay text. */
+    function looksLikeMath(token) {
+      if (token.length < 3) return false
+      if (/^\$\s/.test(token) || /\s\$$/.test(token)) return false
+      return true
+    }
+
+    /** Split one line of Markdown into its inline leaves. */
+    function renderInline(text, keyPrefix, ctx) {
       const out = []
       let last = 0
       let index = 0
@@ -754,14 +903,33 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         index += 1
         if (token.startsWith('`')) {
           out.push(h('code', { key }, token.slice(1, -1)))
-        } else if (token.startsWith('**')) {
-          out.push(h('strong', { key }, token.slice(2, -2)))
+        } else if (token.startsWith('![')) {
+          const cut = token.indexOf('](')
+          out.push(h('img', {
+            key,
+            className: 'lmn-md-image',
+            src: token.slice(cut + 2, -1),
+            alt: token.slice(2, cut),
+            loading: 'lazy',
+          }))
+        } else if (token.startsWith('[^')) {
+          out.push(footnoteRef(token.slice(2, -1), key, ctx))
         } else if (token.startsWith('[')) {
           const cut = token.indexOf('](')
           out.push(
             h('a', { key, href: token.slice(cut + 2, -1), target: '_blank', rel: 'noreferrer' },
               token.slice(1, cut)),
           )
+        } else if (token.startsWith('**')) {
+          out.push(h('strong', { key }, token.slice(2, -2)))
+        } else if (token.startsWith('~~')) {
+          out.push(h('del', { key }, token.slice(2, -2)))
+        } else if (token.startsWith('$')) {
+          if (looksLikeMath(token)) {
+            out.push(h(MathSpan, { key, keyName: key, tex: token.slice(1, -1), display: false }))
+          } else {
+            out.push(token)
+          }
         } else {
           out.push(h('em', { key }, token.slice(1, -1)))
         }
@@ -772,6 +940,22 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       return out
     }
 
+    /** One `[^name]` reference; numbering follows first use, as readers expect. */
+    function footnoteRef(name, key, ctx) {
+      if (ctx === null || ctx === undefined) {
+        return h('sup', { key }, `[${name}]`)
+      }
+      let order = ctx.order.get(name)
+      if (order === undefined) {
+        order = ctx.order.size + 1
+        ctx.order.set(name, order)
+        const body = ctx.definitions.get(name)
+        ctx.used.push({ name, order, body: body ?? null })
+      }
+      return h('sup', { key, className: 'lmn-md-fn-ref' },
+        h('a', { href: `#lmn-fn-${name}`, id: `lmn-fnref-${name}` }, String(order)))
+    }
+
     /** Split one table row into trimmed cells. */
     function tableCells(row) {
       return row
@@ -779,6 +963,38 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         .replace(/\|\s*$/, '')
         .split('|')
         .map((cell) => cell.trim())
+    }
+
+    /** Read `:--`, `:-:` and `--:` into left, center and right alignment. */
+    function tableAlignments(separator) {
+      return tableCells(separator).map((cell) => {
+        const left = cell.startsWith(':')
+        const right = cell.endsWith(':')
+        if (left && right) return 'center'
+        if (right) return 'right'
+        if (left) return 'left'
+        return ''
+      })
+    }
+
+    /** Leading whitespace, which is what tells a nested list from a sibling. */
+    function indentWidth(line) {
+      let width = 0
+      for (const character of line) {
+        if (character === ' ') width += 1
+        else if (character === '\t') width += 4
+        else break
+      }
+      return width
+    }
+
+    /** The bullet or number of one list item, or null when the line is not one. */
+    function listItemOf(line, ordered) {
+      const body = line.trimStart()
+      const match = ordered ? MD_ORDERED.exec(body) : MD_BULLET.exec(body)
+      if (match === null) return null
+      if (!ordered && MD_ORDERED.test(body)) return null
+      return { text: match[1], ordered }
     }
 
     // --- Code highlighting -------------------------------------------------
@@ -2295,15 +2511,177 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
      * Everything unrecognised falls through to a paragraph of literal text, so
      * an unknown construct is shown as written rather than dropped.
      */
+    /**
+     * Every heading the preview will paint, in paint order.
+     *
+     * The renderer numbers headings the same way, so an id worked out here can
+     * be reused as the anchor of the matching element.
+     */
+    function outlineOf(flow) {
+      const headings = []
+      let fence = null
+      for (const line of flow) {
+        const open = MD_FENCE.exec(line)
+        if (open !== null) {
+          if (fence === null) fence = open[1]
+          else if (line.trim() === fence) fence = null
+          continue
+        }
+        if (fence !== null) continue
+        const heading = MD_HEADING.exec(line)
+        if (heading === null) continue
+        headings.push({
+          id: `lmn-h-${headings.length}`,
+          level: heading[1].length,
+          text: heading[2].trim(),
+        })
+      }
+      return headings
+    }
+
+    /** Jump the preview to one heading, without leaving the panel. */
+    function jumpToHeading(id) {
+      try {
+        const target = typeof document?.getElementById === 'function'
+          ? document.getElementById(id)
+          : null
+        if (target !== null && target !== undefined && typeof target.scrollIntoView === 'function') {
+          target.scrollIntoView({ block: 'start' })
+        }
+      } catch {
+        // A missing anchor is not worth an error: the preview stays put.
+      }
+    }
+
+    /** One clickable entry of an outline, indented by heading level. */
+    function outlineEntry(entry, keyPrefix) {
+      return h('a', {
+        key: `${keyPrefix}-${entry.id}`,
+        className: `lmn-outline-item is-level-${entry.level}`,
+        href: `#${entry.id}`,
+        onClick: (event) => {
+          event?.preventDefault?.()
+          jumpToHeading(entry.id)
+        },
+      }, entry.text)
+    }
+
+    /** Render the note, with footnote definitions lifted out of the flow. */
     function renderMarkdown(source) {
       const lines = String(source ?? '').split(/\r?\n/)
+      const definitions = new Map()
+      const flow = []
+      let openFence = null
+      for (const line of lines) {
+        const fence = MD_FENCE.exec(line)
+        if (fence !== null) {
+          if (openFence === null) openFence = fence[1]
+          else if (line.trim() === openFence) openFence = null
+          flow.push(line)
+          continue
+        }
+        if (openFence !== null) {
+          flow.push(line)
+          continue
+        }
+        const definition = MD_FOOTNOTE_DEF.exec(line)
+        if (definition !== null) {
+          definitions.set(definition[1], definition[2])
+          continue
+        }
+        flow.push(line)
+      }
+
+      const outline = outlineOf(flow)
       const blocks = []
       let index = 0
       let counter = 0
+      let headingCount = 0
       const nextKey = () => `md${counter++}`
+      const ctx = { definitions, order: new Map(), used: [] }
 
-      while (index < lines.length) {
-        const line = lines[index]
+      /** One bullet or numbered list, recursing into indented children. */
+      function renderList(ordered, indent) {
+        const items = []
+        while (index < flow.length) {
+          const line = flow[index]
+          if (line.trim() === '') {
+            const next = flow[index + 1]
+            if (next !== undefined && indentWidth(next) >= indent && listItemOf(next, ordered) !== null) {
+              index += 1
+              continue
+            }
+            break
+          }
+          if (indentWidth(line) < indent) break
+          const item = listItemOf(line, ordered)
+          if (item === null) break
+          index += 1
+
+          const children = []
+          while (index < flow.length && flow[index].trim() !== '' && indentWidth(flow[index]) > indent) {
+            const nestedOrdered = listItemOf(flow[index], true) !== null
+            const nestedBullet = listItemOf(flow[index], false) !== null
+            if (!nestedOrdered && !nestedBullet) break
+            children.push(renderList(nestedOrdered, indentWidth(flow[index])))
+          }
+
+          const task = MD_TASK.exec(item.text)
+          const key = `li${items.length}`
+          const label = task === null
+            ? renderInline(item.text, key, ctx)
+            : [
+              h('input', {
+                key: 'box',
+                type: 'checkbox',
+                className: 'lmn-md-task',
+                checked: task[1].toLowerCase() === 'x',
+                readOnly: true,
+                tabIndex: -1,
+              }),
+              h('span', { key: 'text', className: task[1].toLowerCase() === 'x' ? 'lmn-md-task-done' : undefined },
+                renderInline(task[2], `${key}:text`, ctx)),
+            ]
+          items.push(h('li', { key },
+            task === null ? label : h('span', { className: 'lmn-md-task-line' }, label),
+            children.length > 0 ? children : null))
+        }
+
+        return h(ordered ? 'ol' : 'ul', { key: nextKey(), className: 'lmn-md-list' }, items)
+      }
+
+      /** A fenced block: a diagram, a formula, or highlighted code. */
+      function renderFence(marker, language, body) {
+        const code = body.join('\n')
+        if (language === 'mermaid') {
+          return h(MermaidDiagram, { key: nextKey(), keyName: nextKey(), code })
+        }
+        if (language === 'math' || language === 'katex' || language === 'tex' || language === 'latex') {
+          return h(MathSpan, { key: nextKey(), keyName: nextKey(), tex: code.trim(), display: true })
+        }
+        const attrs = { key: nextKey() }
+        if (language !== '') attrs['data-lang'] = language
+        return h('pre', attrs, h('code', null, highlightCode(code, language)))
+      }
+
+      /** `[!NOTE]`-style callout, or a plain quote when the marker is absent. */
+      function renderQuote(body) {
+        const head = MD_CALLOUT.exec(body[0] ?? '')
+        if (head === null) {
+          return h('blockquote', { key: nextKey(), className: 'lmn-md-quote-block' },
+            renderInline(body.join('\n'), nextKey(), ctx))
+        }
+        const kind = head[1].toLowerCase()
+        const title = head[2].trim()
+        const rest = body.slice(1)
+        return h('div', { key: nextKey(), className: `lmn-md-callout is-${kind}` },
+          h('div', { className: 'lmn-md-callout-title' }, title === '' ? CALLOUT_LABEL[kind] ?? kind : title),
+          rest.length === 0 ? null : h('div', { className: 'lmn-md-callout-body' },
+            renderInline(rest.join('\n'), nextKey(), ctx)))
+      }
+
+      while (index < flow.length) {
+        const line = flow[index]
 
         const fence = MD_FENCE.exec(line)
         if (fence !== null) {
@@ -2311,15 +2689,12 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           const language = String(fence[2] ?? '').trim().toLowerCase()
           const body = []
           index += 1
-          while (index < lines.length && lines[index].trim() !== marker) {
-            body.push(lines[index])
+          while (index < flow.length && flow[index].trim() !== marker) {
+            body.push(flow[index])
             index += 1
           }
           index += 1
-          const code = body.join('\n')
-          const attrs = { key: nextKey() }
-          if (language !== '') attrs['data-lang'] = language
-          blocks.push(h('pre', attrs, h('code', null, highlightCode(code, language))))
+          blocks.push(renderFence(marker, language, body))
           continue
         }
 
@@ -2331,90 +2706,130 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         const heading = MD_HEADING.exec(line)
         if (heading !== null) {
           const level = heading[1].length
-          blocks.push(h(`h${level}`, { key: nextKey() }, renderInline(heading[2], nextKey())))
+          const anchor = outline[headingCount]?.id ?? `lmn-h-${headingCount}`
+          headingCount += 1
+          blocks.push(h(`h${level}`, {
+            key: nextKey(),
+            className: 'lmn-md-heading',
+            id: anchor,
+          }, renderInline(heading[2], nextKey(), ctx)))
           index += 1
           continue
         }
 
-        if (MD_RULE.test(line)) {
-          blocks.push(h('hr', { key: nextKey() }))
+        if (MD_TOC.test(line)) {
           index += 1
+          const entries = outline.filter((entry) => entry.level >= 2)
+          const shown = entries.length > 0 ? entries : outline
+          if (shown.length === 0) continue
+          blocks.push(h('nav', { key: nextKey(), className: 'lmn-md-toc', 'aria-label': 'Contents' },
+            shown.map((entry) => outlineEntry(entry, 'toc'))))
+          continue
+        }
+
+        if (MD_RULE.test(line)) {
+          blocks.push(h('hr', { key: nextKey(), className: 'lmn-md-rule' }))
+          index += 1
+          continue
+        }
+
+        const mathOpen = MD_MATH_OPEN.exec(line)
+        if (mathOpen !== null) {
+          const first = mathOpen[1]
+          const closeAt = first.indexOf('$$')
+          index += 1
+          if (closeAt >= 0) {
+            blocks.push(h(MathSpan, {
+              key: nextKey(),
+              keyName: nextKey(),
+              tex: first.slice(0, closeAt).trim(),
+              display: true,
+            }))
+            continue
+          }
+          const body = first.trim() === '' ? [] : [first]
+          while (index < flow.length) {
+            const current = flow[index]
+            const close = current.indexOf('$$')
+            index += 1
+            if (close >= 0) {
+              const head = current.slice(0, close)
+              if (head.trim() !== '') body.push(head)
+              break
+            }
+            body.push(current)
+          }
+          blocks.push(h(MathSpan, { key: nextKey(), keyName: nextKey(), tex: body.join('\n').trim(), display: true }))
           continue
         }
 
         if (MD_QUOTE.test(line)) {
           const body = []
-          while (index < lines.length) {
-            const quoted = MD_QUOTE.exec(lines[index])
+          while (index < flow.length) {
+            const quoted = MD_QUOTE.exec(flow[index])
             if (quoted === null) break
             body.push(quoted[1])
             index += 1
           }
-          blocks.push(h('blockquote', { key: nextKey() }, renderInline(body.join('\n'), nextKey())))
+          blocks.push(renderQuote(body))
           continue
         }
 
-        if (line.includes('|') && index + 1 < lines.length && MD_TABLE_SEP.test(lines[index + 1])) {
+        if (line.includes('|') && index + 1 < flow.length && MD_TABLE_SEP.test(flow[index + 1])) {
           const head = tableCells(line)
+          const alignments = tableAlignments(flow[index + 1])
           index += 2
           const rows = []
-          while (index < lines.length && lines[index].includes('|') && lines[index].trim() !== '') {
-            rows.push(tableCells(lines[index]))
+          while (index < flow.length && flow[index].includes('|') && flow[index].trim() !== '') {
+            rows.push(tableCells(flow[index]))
             index += 1
+          }
+          const cellStyle = (column) => {
+            const alignment = alignments[column] ?? ''
+            return alignment === '' ? undefined : { textAlign: alignment }
           }
           blocks.push(
             h(
               'table',
-              { key: nextKey() },
+              { key: nextKey(), className: 'lmn-md-table' },
               h(
                 'thead',
                 null,
                 h('tr', null, head.map((cell, column) =>
-                  h('th', { key: `h${column}` }, renderInline(cell, `th${column}`)))),
+                  h('th', { key: `h${column}`, style: cellStyle(column) },
+                    renderInline(cell, `th${column}`, ctx)))),
               ),
               h(
                 'tbody',
                 null,
                 rows.map((row, rowIndex) =>
                   h('tr', { key: `r${rowIndex}` }, row.map((cell, column) =>
-                    h('td', { key: `c${column}` }, renderInline(cell, `td${rowIndex}.${column}`))))),
+                    h('td', { key: `c${column}`, style: cellStyle(column) },
+                      renderInline(cell, `td${rowIndex}.${column}`, ctx))))),
               ),
             ),
           )
           continue
         }
 
-        if (MD_BULLET.test(line) || MD_ORDERED.test(line)) {
-          const ordered = MD_ORDERED.test(line) && !MD_BULLET.test(line)
-          const items = []
-          while (index < lines.length) {
-            const item = ordered ? MD_ORDERED.exec(lines[index]) : MD_BULLET.exec(lines[index])
-            if (item === null) break
-            items.push(item[1])
-            index += 1
-          }
-          blocks.push(
-            h(
-              ordered ? 'ol' : 'ul',
-              { key: nextKey() },
-              items.map((item, itemIndex) =>
-                h('li', { key: `l${itemIndex}` }, renderInline(item, `li${itemIndex}`))),
-            ),
-          )
+        const ordered = MD_ORDERED.test(line.trimStart()) && !MD_BULLET.test(line.trimStart())
+        if (MD_BULLET.test(line.trimStart()) || ordered) {
+          blocks.push(renderList(ordered, indentWidth(line)))
           continue
         }
 
         const body = []
-        while (index < lines.length) {
-          const current = lines[index]
+        while (index < flow.length) {
+          const current = flow[index]
           if (
             current.trim() === '' ||
             MD_FENCE.test(current) ||
             MD_HEADING.test(current) ||
             MD_RULE.test(current) ||
             MD_QUOTE.test(current) ||
-            MD_BULLET.test(current) ||
-            MD_ORDERED.test(current)
+            MD_MATH_OPEN.test(current) ||
+            MD_BULLET.test(current.trimStart()) ||
+            MD_ORDERED.test(current.trimStart())
           ) {
             break
           }
@@ -2423,10 +2838,27 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         }
         if (body.length === 0) {
           // Nothing consumed: emit the line literally so the loop always advances.
-          body.push(lines[index])
+          body.push(flow[index])
           index += 1
         }
-        blocks.push(h('p', { key: nextKey() }, renderInline(body.join('\n'), nextKey())))
+        blocks.push(h('p', { key: nextKey(), className: 'lmn-md-paragraph' },
+          renderInline(body.join('\n'), nextKey(), ctx)))
+      }
+
+      if (ctx.used.length > 0) {
+        blocks.push(
+          h('section', { key: nextKey(), className: 'lmn-md-footnotes' },
+            h('hr', { className: 'lmn-md-rule' }),
+            h('ol', null, ctx.used.map((note, position) => h('li', {
+              key: `fn${position}`,
+              id: `lmn-fn-${note.name}`,
+              className: 'lmn-md-footnote',
+            },
+            note.body === null
+              ? h('span', { className: 'lmn-md-footnote-missing' }, `[^${note.name}] 没有定义`)
+              : renderInline(note.body, `fn${position}`, null),
+            h('a', { className: 'lmn-md-footnote-back', href: `#lmn-fnref-${note.name}` }, '↩'))))),
+        )
       }
 
       return blocks
@@ -4068,7 +4500,16 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                 viewMode === 'preview'
                   ? draft === ''
                     ? h('div', { className: 'lmn-render-empty' }, t('panel.previewEmpty'))
-                    : h('div', { className: 'lmn-render' }, renderMarkdown(draft))
+                    : h('div', { className: 'lmn-preview' },
+                        h('div', { className: 'lmn-render' }, renderMarkdown(draft)),
+                        (() => {
+                          const entries = outlineOf(String(draft).split(/\r?\n/))
+                          if (entries.length < 2) return null
+                          return h('aside', {
+                            className: 'lmn-outline',
+                            'aria-label': t('panel.outline'),
+                          }, entries.map((entry) => outlineEntry(entry, 'side')))
+                        })())
                   : h(
                       'div',
                       { className: 'lmn-code' },

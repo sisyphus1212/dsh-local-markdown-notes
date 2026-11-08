@@ -13,9 +13,14 @@ The panel is local-first: files stay where they are on disk, nothing is copied, 
   recursive tree lists every Markdown file, one click opens it next to the conversation.
 - **Edit with auto-save** — the editor saves while you type, and keystrokes typed while a save is
   already in flight are not dropped (they are re-sent after the write settles).
-- **Markdown rendering** — headings, tables, lists, task lists, links and fenced code blocks with
-  syntax highlighting (shell, PowerShell, Python, JavaScript/TypeScript, Go, Rust, Java, C/C++,
-  SQL, JSON, YAML and more).
+- **Markdown rendering** — headings, tables, lists, task lists, links, images, footnotes, callouts
+  (`> [!NOTE]`), strikethrough and fenced code blocks with syntax highlighting (shell,
+  PowerShell, Python, JavaScript/TypeScript, Go, Rust, Java, C/C++, SQL, JSON, YAML and more).
+- **Outline beside the preview** — every heading is listed down the right edge and jumps to its
+  section on click; a `[TOC]` line renders the same list inline.
+- **Maths and diagrams, offline** — `$…$` and `$$…$$` are typeset with a bundled KaTeX, and
+  ` ```mermaid ` fences are drawn with a bundled Mermaid. Both ship inside the plugin as lazy
+  chunks, so the preview works with no network at all.
 - **Read-only Git context** — a file's status against `HEAD`, a diff with per-line change bars,
   and line blame for the current file. The plugin only runs `git status`, `git diff` and
   `git blame`; it never commits, stages, checks out or rewrites history.
@@ -57,7 +62,9 @@ Manual install: copy this directory into
   stack (mounting a second `domain` storage throws `storage form 'domain' is already mounted` and
   takes the whole app down).
 - Browser half — `client.js`: prebuilt and committed, declared through `dsh.client` in
-  `package.json`.
+  `package.json`. The two heavy engines ride along as package-local lazy chunks
+  (`client.katex.js`, `client.mermaid.js`): they register through the host's module loader and are
+  fetched only when a note actually contains a formula or a diagram.
 - `package.json` declares `dsh.bundle.patch` → `cordis.patch.yml`, which inserts exactly one row
   (this plugin) and nothing else.
 
@@ -65,6 +72,9 @@ Manual install: copy this directory into
 
 把本机的 Markdown 文件夹做成 DSH 侧边栏里的笔记面板：树形浏览、就地编辑（自动保存）、全文检索，
 并在不改动仓库的前提下显示 Git 状态、与 `HEAD` 的差异（逐行变更标记）和逐行 blame。
+预览支持脚注、Callout、任务列表、图片、删除线、表格对齐；右侧列出全文目录（点条目跳转），
+文档里写 `[TOC]` 会在原位生成同样的目录；公式用内置 KaTeX 排版、```mermaid 图用内置 Mermaid 绘制，
+两者作为懒加载 chunk 随插件离线可用。
 插件同时向模型提供 `notes_*` 六个工具，因此对话里也能直接读写这些笔记。
 
 安装：`dsh plugin --profile <profile> add github:sisyphus1212/dsh-local-markdown-notes`，

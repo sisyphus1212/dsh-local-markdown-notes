@@ -19,6 +19,8 @@
   "files": [
     "index.js",
     "client.js",
+    "client.katex.js",
+    "client.mermaid.js",
     "cordis.patch.yml",
     "lib/*.js",
     "locale/*.json",

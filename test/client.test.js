@@ -828,6 +828,9 @@ function treeNamespace(options = {}) {
     },
     async writeFile(projectId, relativePath, content, expectedVersion) {
       calls.push(['writeFile', projectId, relativePath, content, expectedVersion])
+      // A test can hold the write open to type while it is still on the wire.
+      const gate = options.gateWrite
+      if (gate !== undefined) await gate(calls.length)
       if (options.writeFails) {
         throw Object.assign(new Error('the file moved on'), { code: 'notes/stale' })
       }
@@ -2080,6 +2083,29 @@ function writes(calls) {
   return calls.filter((call) => call[0] === 'writeFile')
 }
 
+/**
+ * A write that stays on the wire until the test releases it, so typing can
+ * happen while a save is in flight.
+ *
+ * Passed to `treeNamespace` as `gateWrite`; it is a function, because the
+ * namespace awaits whatever it hands back.
+ */
+function writeGate() {
+  const waiting = []
+  const gate = () =>
+    new Promise((release) => {
+      waiting.push(release)
+    })
+  gate.waiting = () => waiting.length
+  gate.release = async () => {
+    const release = waiting.shift()
+    if (release === undefined) return
+    release()
+    for (let i = 0; i < 20; i += 1) await Promise.resolve()
+  }
+  return gate
+}
+
 test('typing saves itself once the typing pauses, without flashing 已保存', async () => {
   const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE })
   const panel = await mountPanel({ namespace })
@@ -2182,6 +2208,75 @@ test('a stale version from an automatic save reports itself instead of vanishing
   assert.ok(
     textsOf(panel.runtime.tree()).includes(`${NS}:panel.staleTitle`),
     'a conflict found by the timer must still reach the user',
+  )
+})
+
+test('typing while a save is on the wire is not swallowed by it', async () => {
+  const gate = writeGate()
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE, gateWrite: gate })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nfirst\n' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  assert.equal(writes(calls).length, 1, 'the paused buffer went to the wire')
+  assert.equal(gate.waiting(), 1, 'and the write is still in flight')
+
+  // These keystrokes arrive while the write is out. A save that reports back by
+  // copying the disk copy into the buffer would drop them.
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nfirst\nsecond\n' } })
+  await panel.runtime.flush()
+
+  await gate.release()
+  await panel.runtime.flush()
+
+  assert.equal(
+    editorTextarea(panel).props.value,
+    'one\ntwo\nfirst\nsecond\n',
+    'the keystrokes typed during the write survive it',
+  )
+  assert.ok(
+    textsOf(panel.runtime.tree()).includes(`${NS}:panel.modifiedDirty`),
+    'and the buffer is still flagged as unsaved, because the disk copy is older',
+  )
+
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+  assert.deepEqual(
+    writes(calls).map((call) => call[3]),
+    ['one\ntwo\nfirst\n', 'one\ntwo\nfirst\nsecond\n'],
+    'the text typed during the write is written by the next save',
+  )
+})
+
+test('a save in flight absorbs the timer instead of running a second write', async () => {
+  const gate = writeGate()
+  const { namespace, calls } = treeNamespace({ entriesByPath: ONE_FILE, gateWrite: gate })
+  const panel = await mountPanel({ namespace })
+  await openTheFile(panel)
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nfirst\n' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  assert.equal(writes(calls).length, 1, 'the first save is on the wire')
+
+  editorTextarea(panel).props.onChange({ target: { value: 'one\ntwo\nfirst\nsecond\n' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+
+  assert.equal(writes(calls).length, 1, 'the timer that fired mid-write does not start a second save')
+
+  await gate.release()
+  await panel.runtime.flush()
+  assert.equal(panel.timerQueue.pending(), 1, 'the settled write re-arms the debounce for the newer typing')
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  assert.deepEqual(
+    writes(calls).map((call) => call[3]),
+    ['one\ntwo\nfirst\n', 'one\ntwo\nfirst\nsecond\n'],
+    'the buffer reaches the disk once the first write has settled',
   )
 })
 

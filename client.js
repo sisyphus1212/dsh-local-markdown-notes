@@ -1587,6 +1587,12 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       // A timer outlives the render that set it, so it must not close over that
       // render's `save`; this ref always holds the newest one.
       const saveRef = React.useRef(null)
+      // VS Code keeps a `versionId` per model and refuses to clobber a buffer
+      // that changed while a save was in flight. The counter below is that
+      // version: every keystroke bumps it, and a save that returns to a
+      // different number knows the user typed during the write.
+      const draftVersion = React.useRef(0)
+      const savingRef = React.useRef(false)
 
       const scheduleAutoSave = React.useCallback(() => {
         if (saveTimer.current !== null) {
@@ -1761,6 +1767,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             setFile({ path: value.path, version: value.version, content: value.content })
             const carried = restoring && session.dirty && session.filePath === value.path ? session.draft : null
             setDraft(carried === null ? value.content : carried)
+            // A different file is now in the editor, so a write still in flight
+            // for the previous one must not be taken as "the user typed".
+            draftVersion.current += 1
             setBlame(null)
             setLineEntry(null)
             setNotice(null)
@@ -1803,23 +1812,43 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const save = React.useCallback(async (options = {}) => {
         const quiet = options.quiet === true
         if (project === null || file === null) return
+        if (savingRef.current) {
+          // A write is already in flight and will settle the buffer when it
+          // returns; this attempt is only here because typing went on. The
+          // running save re-arms the debounce for those keystrokes on its way
+          // out, so nothing is left behind and no second write starts here.
+          return
+        }
         if (quiet && draft === file.content) return
+        // VS Code's `versionId`: remember which buffer this write carries, and
+        // on return tell whether the user typed while it was on the wire.
+        const startedAt = draftVersion.current
+        const content = draft
+        savingRef.current = true
         try {
           setBusy('save')
-          const value = await api.writeFile(project.id, file.path, draft, file.version)
+          const value = await api.writeFile(project.id, file.path, content, file.version)
+          const moved = draftVersion.current !== startedAt
+          // The disk holds `content` either way, so the version and the
+          // committed copy move even when the buffer did not.
           setFile({ path: value.path, version: value.version, content: value.content })
-          setDraft(value.content)
-          if (!quiet) setNotice('panel.saved')
           setError(null)
-          // The buffer now matches the disk again, so a later panel switch must
-          // read the saved file rather than replay stale typing.
           session.filePath = value.path
-          session.draft = value.content
-          session.dirty = false
+          if (moved) {
+            // Typing continued mid-write. The buffer is newer than the disk, so
+            // it is left exactly as the user typed it and stays dirty; writing
+            // `value.content` back over it here is what used to swallow the
+            // keystrokes. The finally block re-arms the debounce for them.
+            session.dirty = true
+          } else {
+            setDraft(value.content)
+            if (!quiet) setNotice('panel.saved')
+            session.draft = value.content
+            session.dirty = false
+          }
           writeStoredSession()
-          // The bars compare HEAD's copy against the buffer, and both moved: the
-          // buffer is the returned content now, and HEAD's copy is still whatever
-          // it was. Re-reading the baseline keeps the two in step.
+          // The bars compare HEAD's copy against the buffer, and the buffer may
+          // just have moved, so the baseline is re-read to keep the two in step.
           await refreshStatus(project)
           await refreshMarks(project, value.path)
         } catch (caught) {
@@ -1828,9 +1857,12 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           }
           report(caught)
         } finally {
+          savingRef.current = false
           setBusy(null)
+          // Anything typed while the write was in flight still needs a turn.
+          if (draftVersion.current !== startedAt) scheduleAutoSave()
         }
-      }, [api, draft, file, project, refreshMarks, refreshStatus, report])
+      }, [api, draft, file, project, refreshMarks, refreshStatus, report, scheduleAutoSave])
 
       // The auto-save timers outlive the render that armed them, so they read
       // the newest `save` through this ref instead of closing over an old one.
@@ -3056,6 +3088,10 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                           spellCheck: false,
                           onChange: (event) => {
                             const next = event.target.value
+                            // Bumps the model version, exactly like VS Code's
+                            // `versionId`, so an in-flight save can tell that
+                            // these keystrokes arrived after it started.
+                            draftVersion.current += 1
                             setDraft(next)
                             setNotice(null)
                             // Keep the unsaved buffer in the session so a panel

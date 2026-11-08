@@ -222,24 +222,32 @@ window.__ModuleLoader__.load({
 .lmn-render code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:1px 4px;border-radius:4px;background:var(--dsw-alias-markdown-inline-code,rgba(0,0,0,.06))}
 .lmn-render pre[data-lang]{position:relative;padding-top:26px}
 .lmn-render pre[data-lang]::before{content:attr(data-lang);position:absolute;top:6px;right:12px;font-size:10px;line-height:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,#81858c);pointer-events:none}
-.lmn-tok-comment{color:var(--dsw-static-neutral-bluish-600,#81858c);font-style:italic}.lmn-tok-keyword{color:var(--dsw-static-violet-600,#7c3aed)}
-.lmn-tok-type{color:var(--dsw-static-blue-800,#1e40af)}
-.lmn-tok-function,.lmn-tok-builtin{color:var(--dsw-static-blue-600,#2563eb)}
-.lmn-tok-string{color:var(--dsw-static-green-900,#233c2c)}
-.lmn-tok-number,.lmn-tok-constant{color:var(--dsw-static-amber-600,#dd8629)}
-body[data-ds-dark-theme] .lmn-tok-comment{color:var(--dsw-static-neutral-bluish-400,#adb2b8)}
-body[data-ds-dark-theme] .lmn-tok-keyword{color:var(--dsw-static-violet-400,#a78bfa)}
-body[data-ds-dark-theme] .lmn-tok-type{color:var(--dsw-static-blue-300,#93c5fd)}
-body[data-ds-dark-theme] .lmn-tok-function,body[data-ds-dark-theme] .lmn-tok-builtin{color:var(--dsw-static-blue-400,#60a5fa)}
-body[data-ds-dark-theme] .lmn-tok-string{color:var(--dsw-static-green-400,#4ed17e)}
-body[data-ds-dark-theme] .lmn-tok-number,body[data-ds-dark-theme] .lmn-tok-constant{color:var(--dsw-static-amber-400,#f7ad31)}
+/* Editor syntax colours, spelled as literals on purpose. The host defines
+   --dsw-static-* on <body> for its own chrome, so a var() here would resolve to
+   those UI colours and never reach the fallback. These are the VS Code Light+
+   values; the two dark blocks below carry the Dark+ set. */
+.lmn-tok-comment{color:#008000;font-style:italic}
+.lmn-tok-keyword{color:#0000FF}
+.lmn-tok-type{color:#267F99}
+.lmn-tok-function,.lmn-tok-builtin{color:#795E26}
+.lmn-tok-string{color:#A31515}
+.lmn-tok-number{color:#098658}
+.lmn-tok-constant{color:#0070C1}
+body[data-ds-dark-theme] .lmn-tok-comment{color:#6A9955}
+body[data-ds-dark-theme] .lmn-tok-keyword{color:#569CD6}
+body[data-ds-dark-theme] .lmn-tok-type{color:#4EC9B0}
+body[data-ds-dark-theme] .lmn-tok-function,body[data-ds-dark-theme] .lmn-tok-builtin{color:#DCDCAA}
+body[data-ds-dark-theme] .lmn-tok-string{color:#CE9178}
+body[data-ds-dark-theme] .lmn-tok-number{color:#B5CEA8}
+body[data-ds-dark-theme] .lmn-tok-constant{color:#4FC1FF}
 @media (prefers-color-scheme:dark){
-body:not([data-ds-light-theme]) .lmn-tok-comment{color:var(--dsw-static-neutral-bluish-400,#adb2b8)}
-body:not([data-ds-light-theme]) .lmn-tok-keyword{color:var(--dsw-static-violet-400,#a78bfa)}
-body:not([data-ds-light-theme]) .lmn-tok-type{color:var(--dsw-static-blue-300,#93c5fd)}
-body:not([data-ds-light-theme]) .lmn-tok-function,body:not([data-ds-light-theme]) .lmn-tok-builtin{color:var(--dsw-static-blue-400,#60a5fa)}
-body:not([data-ds-light-theme]) .lmn-tok-string{color:var(--dsw-static-green-400,#4ed17e)}
-body:not([data-ds-light-theme]) .lmn-tok-number,body:not([data-ds-light-theme]) .lmn-tok-constant{color:var(--dsw-static-amber-400,#f7ad31)}
+body:not([data-ds-light-theme]) .lmn-tok-comment{color:#6A9955}
+body:not([data-ds-light-theme]) .lmn-tok-keyword{color:#569CD6}
+body:not([data-ds-light-theme]) .lmn-tok-type{color:#4EC9B0}
+body:not([data-ds-light-theme]) .lmn-tok-function,body:not([data-ds-light-theme]) .lmn-tok-builtin{color:#DCDCAA}
+body:not([data-ds-light-theme]) .lmn-tok-string{color:#CE9178}
+body:not([data-ds-light-theme]) .lmn-tok-number{color:#B5CEA8}
+body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
 }
 /* Markdown structure painted in the editor mirror. These use alias tokens, so
    they follow the theme without a second dark block. */

@@ -2110,6 +2110,108 @@ test('dragging the splitter resizes the bottom pane and keeps the chosen height'
   assert.equal(pane().props.style.height, '60px', 'a stray move after release is ignored')
 })
 
+/** Drop CSS comments, so a note about a constraint is not read as the constraint. */
+function stripComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/** Split a flat block of CSS into `{ selector, body }` pairs. */
+function cssRules(css) {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+    selector: match[1].trim(),
+    body: match[2],
+  }))
+}
+
+/** Find the rule that paints `selector` and return its declarations, if any. */
+function ruleFor(css, selector) {
+  const parts = cssRules(css).filter((rule) =>
+    rule.selector.split(',').some((part) => part.trim() === selector),
+  )
+  return parts.find((rule) => rule.body.includes('color:')) ?? null
+}
+
+test('the editor palette carries the VS Code Light+ colours as literals', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const css = styles[0].textContent
+
+  // The host declares --dsw-static-* on <body> for its own chrome. A var() here
+  // would resolve to those UI colours, so the palette must be spelled out.
+  // Comments are stripped first: the note explaining that constraint names it.
+  const declarations = stripComments(css)
+  assert.ok(
+    !declarations.includes('--dsw-static-'),
+    'no syntax colour may resolve through a host static token',
+  )
+
+  const light = {
+    comment: '#008000',
+    keyword: '#0000FF',
+    type: '#267F99',
+    function: '#795E26',
+    builtin: '#795E26',
+    string: '#A31515',
+    number: '#098658',
+    constant: '#0070C1',
+  }
+  for (const [token, hex] of Object.entries(light)) {
+    const rule = ruleFor(declarations, `.lmn-tok-${token}`)
+    assert.ok(rule, `.lmn-tok-${token} is painted at all`)
+    assert.ok(
+      rule.body.includes(`color:${hex}`),
+      `.lmn-tok-${token} is the Light+ colour ${hex}: ${rule.body}`,
+    )
+  }
+  assert.ok(
+    ruleFor(declarations, '.lmn-tok-comment').body.includes('font-style:italic'),
+    'comments stay slanted',
+  )
+})
+
+test('the dark palette is Dark+ in both dark branches', async () => {
+  const { plugin, styles } = loadClient()
+  const { ctx } = fakeCtx()
+  await plugin.apply(ctx)
+
+  const css = styles[0].textContent
+  const dark = {
+    comment: '#6A9955',
+    keyword: '#569CD6',
+    type: '#4EC9B0',
+    function: '#DCDCAA',
+    builtin: '#DCDCAA',
+    string: '#CE9178',
+    number: '#B5CEA8',
+    constant: '#4FC1FF',
+  }
+
+  const media = /@media \(prefers-color-scheme:dark\)\{([\s\S]*?)\n\}/.exec(css)
+  assert.ok(media, 'the media-query dark branch exists for hosts without the theme attribute')
+  const themed = stripComments(css).replace(media[0], '')
+  const fallback = media[1]
+
+  for (const [token, hex] of Object.entries(dark)) {
+    const attributeSelector = `body[data-ds-dark-theme] .lmn-tok-${token}`
+    const attributeRule = ruleFor(themed, attributeSelector)
+    assert.ok(attributeRule, `the themed dark rule for ${attributeSelector} exists`)
+    assert.ok(
+      attributeRule.body.includes(`color:${hex}`),
+      `${attributeSelector} is ${hex}: ${attributeRule.body}`,
+    )
+
+    const fallbackSelector = `body:not([data-ds-light-theme]) .lmn-tok-${token}`
+    const fallbackRule = ruleFor(fallback, fallbackSelector)
+    assert.ok(fallbackRule, `the prefers-color-scheme rule for ${fallbackSelector} exists`)
+    assert.ok(
+      fallbackRule.body.includes(`color:${hex}`),
+      `${fallbackSelector} matches the themed colour ${hex}: ${fallbackRule.body}`,
+    )
+  }
+})
+
 test('highlighted source can never become executable markup', async () => {
   const source = "const tag = '<img src=x onerror=alert(1)>'"
   const render = await previewing(['```js', source, '```', ''].join('\n'))

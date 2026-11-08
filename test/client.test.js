@@ -2520,6 +2520,98 @@ test('a fence without a language carries no badge and no colouring', async () =>
   assert.equal(textsOf(seekType(pre, 'code')), 'plain text')
 })
 
+test('a C fence colours the preprocessor, the return type and the calls', async () => {
+  const source = ['#include <stdio.h>', '', 'int main(void) {', '  printf("hi");', '  return 0;', '}'].join('\n')
+  const render = await previewing(['```c', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-keyword').map(textsOf), ['#include'])
+  assert.deepEqual(findAll(code, 'lmn-tok-type').map(textsOf), ['int', 'void'])
+  assert.deepEqual(findAll(code, 'lmn-tok-control').map(textsOf), ['return'])
+  assert.deepEqual(findAll(code, 'lmn-tok-string').map(textsOf), ['<stdio.h>', '"hi"'])
+  assert.deepEqual(findAll(code, 'lmn-tok-function').map(textsOf), ['main'])
+  assert.deepEqual(findAll(code, 'lmn-tok-builtin').map(textsOf), ['printf'])
+  assert.equal(textsOf(code), source, 'a C block is still shown verbatim')
+})
+
+test('a shell fence separates the command, its flags and file operands', async () => {
+  const source = ['sudo ovs-vsctl --timeout=5 show', 'cat /var/log/openvswitch/ovs-vswitchd.log'].join('\n')
+  const render = await previewing(['```bash', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-builtin').map(textsOf), ['sudo', 'cat'])
+  assert.deepEqual(findAll(code, 'lmn-tok-function').map(textsOf), ['ovs-vsctl'])
+  assert.deepEqual(findAll(code, 'lmn-tok-constant').map(textsOf), ['--timeout'])
+  assert.deepEqual(findAll(code, 'lmn-tok-type').map(textsOf), ['/var/log/openvswitch/ovs-vswitchd.log'])
+  assert.equal(textsOf(code), source)
+})
+
+test('a YAML fence colours keys, scalars and comments without touching the text', async () => {
+  const source = ['# deploy', 'name: demo', 'replicas: 3', 'enabled: true'].join('\n')
+  const render = await previewing(['```yaml', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-comment').map(textsOf), ['# deploy'])
+  assert.deepEqual(findAll(code, 'lmn-tok-property').map(textsOf), ['name', 'replicas', 'enabled'])
+  assert.deepEqual(findAll(code, 'lmn-tok-number').map(textsOf), ['3'])
+  assert.deepEqual(findAll(code, 'lmn-tok-constant').map(textsOf), ['true'])
+  assert.equal(textsOf(code), source)
+})
+
+test('a CSS fence colours selectors, properties and values', async () => {
+  const source = ['body {', '  color: #fff;', '  --gap: 4px;', '}'].join('\n')
+  const render = await previewing(['```css', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-tag').map(textsOf), ['body'])
+  assert.deepEqual(findAll(code, 'lmn-tok-property').map(textsOf), ['color', '--gap'])
+  assert.deepEqual(findAll(code, 'lmn-tok-number').map(textsOf), ['#fff', '4px'])
+  assert.equal(textsOf(code), source)
+})
+
+test('an HTML fence colours tags, attributes and entities', async () => {
+  const source = ['<div class="box">', '  &amp;', '</div>'].join('\n')
+  const render = await previewing(['```html', source, '```', ''].join('\n'))
+  const code = seekType(seekType(render, 'pre'), 'code')
+
+  assert.deepEqual(findAll(code, 'lmn-tok-tag').map(textsOf), ['div', 'div'])
+  assert.deepEqual(findAll(code, 'lmn-tok-property').map(textsOf), ['class'])
+  assert.deepEqual(findAll(code, 'lmn-tok-string').map(textsOf), ['"box"'])
+  assert.deepEqual(findAll(code, 'lmn-tok-constant').map(textsOf), ['&amp;'])
+  assert.equal(textsOf(code), source)
+})
+
+test('a block comment spanning lines is painted as one comment in the editor', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+  const { area } = await openWithGutter(panel)
+
+  const draft = ['```js', '/* first', '   second */', 'const x = 1', '```', ''].join('\n')
+  area.props.onChange({ target: { value: draft } })
+  await panel.runtime.flush()
+
+  const hl = findOne(panel.runtime.tree(), 'lmn-hl')
+  assert.deepEqual(findAll(hl, 'lmn-hl-line').map(textsOf), draft.split('\n'))
+  const second = findAll(hl, 'lmn-hl-line').find((item) => textsOf(item) === '   second */')
+  assert.ok(second, 'the second comment line keeps its own painted line')
+  assert.equal(
+    textsOf(findOne(second, 'lmn-tok-comment')),
+    '   second */',
+    'the continuation line is part of the same comment',
+  )
+})
+
+test('a fence without a language is recognised when its body is unmistakable', async () => {
+  const source = ['#include <stdio.h>', 'int main(void) { return 0; }'].join('\n')
+  const render = await previewing(['```', source, '```', ''].join('\n'))
+  const pre = seekType(render, 'pre')
+
+  assert.equal(pre.props['data-lang'], undefined, 'no language is claimed')
+  const code = seekType(pre, 'code')
+  assert.ok(findOne(code, 'lmn-tok-keyword'), 'the C tokens are still coloured')
+  assert.equal(textsOf(code), source)
+})
+
 test('the document column uses the full width instead of a fixed centred measure', async () => {
   const { plugin, styles } = loadClient()
   const { ctx } = fakeCtx()

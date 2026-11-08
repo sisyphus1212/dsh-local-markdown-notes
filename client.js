@@ -301,7 +301,7 @@ body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-render li{margin:2px 0}
 .lmn-render blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--dsw-alias-border-l3,rgba(0,0,0,.16));color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-render hr{margin:14px 0;border:0;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12))}
-.lmn-render pre{margin:10px 0;padding:10px 12px;border-radius:8px;overflow:auto;background:var(--dsw-alias-markdown-code-block,rgba(0,0,0,.04));border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word}
+.lmn-render pre{margin:10px 0;padding:10px 12px;border-radius:8px;overflow:auto;background:var(--dsw-alias-markdown-code-block,rgba(0,0,0,.04));border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;tab-size:4}
 .lmn-render pre code{background:none;border:0;padding:0;font-size:inherit}
 .lmn-render code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:1px 4px;border-radius:4px;background:var(--dsw-alias-markdown-inline-code,rgba(0,0,0,.06))}
 .lmn-render pre[data-lang]{position:relative;padding-top:26px}
@@ -317,6 +317,11 @@ body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-tok-string{color:#A31515}
 .lmn-tok-number{color:#098658}
 .lmn-tok-constant{color:#0070C1}
+.lmn-tok-control{color:#AF00DB}
+.lmn-tok-property{color:#0451A5}
+.lmn-tok-tag{color:#800000}
+.lmn-tok-variable{color:#001080}
+.lmn-tok-regex{color:#811F3F}
 body[data-ds-dark-theme] .lmn-tok-comment{color:#6A9955}
 body[data-ds-dark-theme] .lmn-tok-keyword{color:#569CD6}
 body[data-ds-dark-theme] .lmn-tok-type{color:#4EC9B0}
@@ -324,6 +329,11 @@ body[data-ds-dark-theme] .lmn-tok-function,body[data-ds-dark-theme] .lmn-tok-bui
 body[data-ds-dark-theme] .lmn-tok-string{color:#CE9178}
 body[data-ds-dark-theme] .lmn-tok-number{color:#B5CEA8}
 body[data-ds-dark-theme] .lmn-tok-constant{color:#4FC1FF}
+body[data-ds-dark-theme] .lmn-tok-control{color:#C586C0}
+body[data-ds-dark-theme] .lmn-tok-property{color:#9CDCFE}
+body[data-ds-dark-theme] .lmn-tok-tag{color:#569CD6}
+body[data-ds-dark-theme] .lmn-tok-variable{color:#9CDCFE}
+body[data-ds-dark-theme] .lmn-tok-regex{color:#D16969}
 @media (prefers-color-scheme:dark){
 body:not([data-ds-light-theme]) .lmn-tok-comment{color:#6A9955}
 body:not([data-ds-light-theme]) .lmn-tok-keyword{color:#569CD6}
@@ -332,6 +342,11 @@ body:not([data-ds-light-theme]) .lmn-tok-function,body:not([data-ds-light-theme]
 body:not([data-ds-light-theme]) .lmn-tok-string{color:#CE9178}
 body:not([data-ds-light-theme]) .lmn-tok-number{color:#B5CEA8}
 body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
+body:not([data-ds-light-theme]) .lmn-tok-control{color:#C586C0}
+body:not([data-ds-light-theme]) .lmn-tok-property{color:#9CDCFE}
+body:not([data-ds-light-theme]) .lmn-tok-tag{color:#569CD6}
+body:not([data-ds-light-theme]) .lmn-tok-variable{color:#9CDCFE}
+body:not([data-ds-light-theme]) .lmn-tok-regex{color:#D16969}
 body:not([data-ds-light-theme]) .lmn-gutter-mark.is-added{background:#81b88b}
 body:not([data-ds-light-theme]) .lmn-gutter-mark.is-modified{background:#4b91e2}
 body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
@@ -779,112 +794,170 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     }
 
     const HL_JS = {
+      kind: 'code',
       lineComment: ['//'],
       blockComment: [['/*', '*/']],
       quotes: ["'", '"', '`'],
       escapes: true,
-      keywords: words('as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch throw try typeof var while with yield'),
-      constants: words('true false null undefined NaN Infinity this'),
-      builtins: words('console window document Object Array Promise JSON Math String Number Boolean Symbol Map Set WeakMap Date RegExp Error process require globalThis'),
-      types: words('any bigint boolean never number object string symbol unknown void'),
+      regex: true,
+      classNames: true,
+      keywords: words('as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch throw try typeof var while with yield this'),
+      control: words('break case catch continue do else finally for if return throw try'),
+      constants: words('true false null undefined NaN Infinity'),
+      builtins: words('console window document Object Array Promise JSON Math String Number Boolean Symbol Map Set WeakMap WeakSet Date RegExp Error process require globalThis parseInt parseFloat isNaN setTimeout clearTimeout'),
+      types: words('any bigint never number object string symbol unknown void'),
     }
+
+    const HL_C = {
+      kind: 'code',
+      lineComment: ['//'],
+      blockComment: [['/*', '*/']],
+      quotes: ["'", '"'],
+      escapes: true,
+      directives: true,
+      classNames: true,
+      keywords: words('auto break case const continue default do else enum extern for goto if inline register restrict return sizeof static struct switch typedef union volatile while _Alignas _Alignof _Atomic _Generic _Noreturn _Static_assert _Thread_local'),
+      control: words('break case continue default do else for goto if return switch while'),
+      constants: words('NULL true false'),
+      builtins: words('printf fprintf sprintf snprintf vprintf malloc calloc realloc free memcpy memset memmove memcmp strlen strcmp strncmp strcpy strncpy strcat fopen fclose fread fwrite fseek fflush fprintf perror exit abort assert'),
+      types: words('bool char double float int long short signed unsigned void size_t ssize_t int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t uint64_t uintptr_t ptrdiff_t FILE va_list'),
+    }
+
+    const HL_PYTHON = {
+      kind: 'code',
+      lineComment: ['#'],
+      blockComment: [],
+      quotes: ["'", '"'],
+      triple: true,
+      escapes: true,
+      decorators: true,
+      classNames: true,
+      keywords: words('and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case'),
+      control: words('break continue elif else except finally for if return try while with'),
+      constants: words('None True False self cls'),
+      builtins: words('print len range enumerate zip isinstance issubclass open sorted sum min max abs round type repr input super setattr getattr hasattr any all map filter'),
+      types: words('bool bytes dict float int list set str tuple complex object'),
+    }
+
+    const HL_SHELL_KEYWORDS = words('if then else elif fi for while until do done case esac in function select return local export readonly declare shift break continue exit set unset trap source alias')
+    const HL_SHELL_BUILTINS = words([
+      'echo printf read cd pwd ls cat head tail grep egrep fgrep sed awk find xargs sort uniq wc cut tr tee',
+      'mkdir rmdir cp mv rm ln chmod chown chgrp df du mount umount touch stat file',
+      'ps kill pkill top free uname hostname date sleep test true false yes',
+      'git npm pnpm yarn node npx python python3 pip pip3 curl wget tar gzip gunzip zcat ssh scp rsync',
+      'systemctl journalctl service ip ifconfig ping traceroute ss netstat lsof dmesg lsmod modprobe insmod rmmod ethtool',
+      'vim vi nano less more man sudo su env nohup watch export tee',
+    ].join(' '))
 
     const HL_SPECS = {
       javascript: HL_JS,
       typescript: {
         ...HL_JS,
-        types: words('any bigint boolean never number object string symbol unknown void interface type enum namespace declare readonly keyof infer satisfies'),
+        keywords: words('abstract as async await class const declare default delete enum export extends from function get implements import in infer instanceof interface keyof let namespace new of override private protected public readonly satisfies set static super type typeof var void while with yield this'),
+        types: words('any bigint boolean never number object string symbol unknown'),
       },
       json: {
+        kind: 'code',
         lineComment: [],
         blockComment: [],
         quotes: ['"'],
         escapes: true,
+        jsonKeys: true,
         keywords: words(''),
         constants: words('true false null'),
         builtins: words(''),
         types: words(''),
       },
       bash: {
+        kind: 'shell',
         lineComment: ['#'],
-        blockComment: [],
         quotes: ["'", '"'],
-        escapes: true,
-        keywords: words('if then else elif fi for while until do done case esac in function return local export readonly shift break continue exit set unset trap source alias'),
+        keywords: HL_SHELL_KEYWORDS,
+        prefixes: words('sudo doas env time nohup exec command xargs watch'),
         constants: words('true false'),
-        builtins: words('echo cd pwd ls cat grep sed awk find xargs read printf git npm pnpm node mkdir cp mv rm chmod curl tar ssh scp'),
-        types: words(''),
+        builtins: HL_SHELL_BUILTINS,
       },
       powershell: {
+        kind: 'shell',
         lineComment: ['#'],
-        blockComment: [['<#', '#>']],
         quotes: ["'", '"'],
-        escapes: true,
         keywords: words('begin break catch class continue data do dynamicparam else elseif end enum exit filter finally for foreach from function if in param process return switch throw trap try until using var while workflow'),
         constants: words('$true $false $null'),
-        builtins: words('Write-Host Write-Output Get-ChildItem Get-Content Set-Content Remove-Item New-Item Copy-Item Move-Item Select-Object Where-Object ForEach-Object Test-Path Join-Path Split-Path'),
-        types: words(''),
+        builtins: words('Write-Host Write-Output Get-ChildItem Get-Content Set-Content Remove-Item New-Item Copy-Item Move-Item Select-Object Where-Object ForEach-Object Test-Path Join-Path Split-Path Invoke-Expression'),
       },
-      python: {
-        lineComment: ['#'],
-        blockComment: [],
-        quotes: ["'", '"'],
-        escapes: true,
-        keywords: words('and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield'),
-        constants: words('None True False self cls'),
-        builtins: words('print len range enumerate zip isinstance issubclass open sorted sum min max abs round type repr input super object setattr getattr hasattr'),
-        types: words('bool bytes dict float int list set str tuple'),
-      },
+      python: HL_PYTHON,
       go: {
+        kind: 'code',
         lineComment: ['//'],
         blockComment: [['/*', '*/']],
         quotes: ['"', '`', "'"],
         escapes: true,
         keywords: words('break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var'),
+        control: words('break case continue default defer else fallthrough for goto if range return select switch'),
         constants: words('nil true false iota'),
         builtins: words('append cap close copy delete len make new panic print println recover'),
         types: words('any bool byte error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr complex64 complex128'),
       },
       rust: {
+        kind: 'code',
         lineComment: ['//'],
         blockComment: [['/*', '*/']],
         quotes: ['"', "'"],
         escapes: true,
+        classNames: true,
         keywords: words('as async await break const continue crate dyn else enum extern fn for if impl in let loop match mod move mut pub ref return self static struct super trait type unsafe use where while'),
+        control: words('break continue else for if loop match return while'),
         constants: words('true false None Some Ok Err'),
         builtins: words('assert assert_eq format panic print println vec write writeln'),
         types: words('bool char f32 f64 i8 i16 i32 i64 i128 isize str u8 u16 u32 u64 u128 usize String Vec Option Result Box HashMap'),
       },
+      c: HL_C,
+      cpp: {
+        ...HL_C,
+        keywords: words('alignas alignof and asm auto break case catch class const constexpr const_cast continue decltype default delete do dynamic_cast else enum explicit export extern false for friend goto if inline mutable namespace new noexcept nullptr operator or private protected public register reinterpret_cast return sizeof static static_cast struct switch template this throw true try typedef typeid typename union using virtual volatile while'),
+        builtins: words('printf fprintf sprintf snprintf cout cin cerr endl std string vector map unordered_map set pair make_pair malloc free memcpy memset strlen strcmp sort push_back size empty'),
+        types: words('bool char double float int long short signed unsigned void size_t ssize_t int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t uint64_t uintptr_t ptrdiff_t FILE va_list string vector map unordered_map set pair unique_ptr shared_ptr'),
+      },
+      java: {
+        kind: 'code',
+        lineComment: ['//'],
+        blockComment: [['/*', '*/']],
+        quotes: ["'", '"'],
+        escapes: true,
+        classNames: true,
+        keywords: words('abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for goto if implements import instanceof int interface long native new package private protected public return short static strictfp super switch synchronized this throw throws transient try void volatile while record sealed permits var'),
+        control: words('break case catch continue default do else finally for if return switch throw try while'),
+        constants: words('true false null'),
+        builtins: words('System out println print String Integer Long Double Boolean Math List ArrayList Map HashMap Set HashSet Objects Optional Stream'),
+        types: words('boolean byte char double float int long short void String Object Integer Long Double Boolean List ArrayList Map HashMap Set HashSet'),
+      },
       sql: {
+        kind: 'code',
         lineComment: ['--'],
         blockComment: [['/*', '*/']],
         quotes: ["'", '"'],
         escapes: false,
         fold: true,
-        keywords: words('add all alter and as asc by case create default delete desc distinct drop else end exists foreign from group having in index inner insert into is join key left like limit not null offset on or order outer primary references right select set table then union unique update values view when where'),
+        keywords: words('add all alter and as asc by case create default delete desc distinct drop else end exists foreign from full group having in index inner insert into is join key left like limit not null offset on or order outer primary references right select set table then union unique update values view when where with'),
+        control: words(''),
         constants: words('true false null'),
-        builtins: words('count sum avg min max coalesce cast now'),
+        builtins: words('count sum avg min max coalesce cast now date_trunc extract'),
         types: words('bigint boolean date decimal double float int integer json numeric real smallint text timestamp varchar'),
       },
-      yaml: {
+      yaml: { kind: 'yaml' },
+      css: { kind: 'css' },
+      html: { kind: 'markup' },
+      xml: { kind: 'markup' },
+      ini: { kind: 'ini' },
+      dockerfile: {
+        kind: 'shell',
         lineComment: ['#'],
-        blockComment: [],
         quotes: ["'", '"'],
-        escapes: false,
-        keywords: words(''),
-        constants: words('true false null yes no on off'),
-        builtins: words(''),
-        types: words(''),
-      },
-      css: {
-        lineComment: [],
-        blockComment: [['/*', '*/']],
-        quotes: ["'", '"'],
-        escapes: true,
-        keywords: words(''),
-        constants: words(''),
-        builtins: words(''),
-        types: words(''),
+        instructions: words('FROM RUN CMD LABEL MAINTAINER EXPOSE ENV ADD COPY ENTRYPOINT VOLUME USER WORKDIR ARG ONBUILD STOPSIGNAL HEALTHCHECK SHELL'),
+        keywords: HL_SHELL_KEYWORDS,
+        prefixes: words('sudo env exec'),
+        constants: words('true false'),
+        builtins: HL_SHELL_BUILTINS,
       },
     }
 
@@ -899,19 +972,44 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       sh: 'bash',
       shell: 'bash',
       zsh: 'bash',
+      ksh: 'bash',
+      fish: 'bash',
       console: 'bash',
       ps1: 'powershell',
       pwsh: 'powershell',
+      ps: 'powershell',
       py: 'python',
       python3: 'python',
       golang: 'go',
       rs: 'rust',
+      cpp: 'cpp',
+      'c++': 'cpp',
+      cc: 'cpp',
+      cxx: 'cpp',
+      hpp: 'cpp',
+      hh: 'cpp',
+      h: 'c',
+      java: 'java',
       yml: 'yaml',
       jsonc: 'json',
       postgres: 'sql',
       postgresql: 'sql',
       mysql: 'sql',
+      html5: 'html',
+      htm: 'html',
+      svg: 'xml',
+      xhtml: 'xml',
+      scss: 'css',
+      less: 'css',
+      toml: 'ini',
+      conf: 'ini',
+      cfg: 'ini',
+      docker: 'dockerfile',
+      'docker-compose': 'yaml',
     }
+
+    /** Languages whose fence means "leave this alone", not "guess at it". */
+    const HL_PLAIN = words('text txt plain plaintext log logs output none raw')
 
     // Both patterns are sticky by `lastIndex`, so they carry the global flag:
     // without it `exec` rescans from 0 and only ever matches the first word.
@@ -924,27 +1022,139 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
      * Returns a list of strings (literal text) and `{className, text}` records;
      * concatenating every part reproduces the input exactly.
      */
-    function tokenizeCode(code, spec) {
+    /** Collect literal text and coloured tokens, preserving every character. */
+    function codeEmitter() {
       const parts = []
       let plain = ''
-      let index = 0
-      const flushPlain = () => {
+      const flush = () => {
         if (plain !== '') {
           parts.push(plain)
           plain = ''
         }
       }
-      const pushToken = (className, text) => {
-        flushPlain()
-        parts.push({ className, text })
+      return {
+        text(value) {
+          if (value !== '') plain += value
+        },
+        token(className, value) {
+          if (value === '') return
+          flush()
+          parts.push({ className, text: value })
+        },
+        done() {
+          flush()
+          return parts
+        },
+      }
+    }
+
+    /** End index of the shell variable starting at `start`, or null. */
+    function readShellVariable(code, start) {
+      const length = code.length
+      let index = start + 1
+      if (index >= length) return null
+      const char = code[index]
+      if (char === '{' || char === '(') {
+        const close = char === '{' ? '}' : ')'
+        let depth = 1
+        index += 1
+        while (index < length && depth > 0) {
+          if (code[index] === '\\') {
+            index += 2
+            continue
+          }
+          if (code[index] === char) depth += 1
+          else if (code[index] === close) depth -= 1
+          index += 1
+        }
+        return depth === 0 ? index : null
+      }
+      if (/[A-Za-z_]/.test(char)) {
+        while (index < length && /[A-Za-z0-9_]/.test(code[index])) index += 1
+        return index
+      }
+      if (/[0-9@*#?$!-]/.test(char)) return index + 1
+      return null
+    }
+
+    /** Pick the scanner for one spec. */
+    function tokenizeCode(code, spec) {
+      if (spec.kind === 'shell') return tokenizeShell(code, spec)
+      if (spec.kind === 'yaml') return tokenizeYaml(code)
+      if (spec.kind === 'css') return tokenizeCss(code)
+      if (spec.kind === 'markup') return tokenizeMarkup(code)
+      if (spec.kind === 'ini') return tokenizeIni(code)
+      return tokenizeGeneric(code, spec)
+    }
+
+    /** C family, Python, Go, Rust and friends: comments, strings, words. */
+    function tokenizeGeneric(code, spec) {
+      const out = codeEmitter()
+      const length = code.length
+      const regexAllowedBefore = /[([{,;:=!&|?+\-*%^~<>]/
+      const regexAllowedWords = new Set([
+        'return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'new', 'do', 'else', 'yield', 'await',
+      ])
+      let index = 0
+      let lineStart = true
+
+      const previousSignificant = (from) => {
+        let cursor = from - 1
+        while (cursor >= 0 && (code[cursor] === ' ' || code[cursor] === '\t')) cursor -= 1
+        return cursor
+      }
+      const previousWord = (from) => {
+        let cursor = from - 1
+        while (cursor >= 0 && (code[cursor] === ' ' || code[cursor] === '\t')) cursor -= 1
+        const end = cursor + 1
+        while (cursor >= 0 && /[\w$]/.test(code[cursor])) cursor -= 1
+        return code.slice(cursor + 1, end)
       }
 
-      while (index < code.length) {
-        const line = spec.lineComment.find((mark) => code.startsWith(mark, index))
-        if (line !== undefined) {
+      while (index < length) {
+        const char = code[index]
+
+        if (char === '\n') {
+          out.text(char)
+          index += 1
+          lineStart = true
+          continue
+        }
+
+        if (lineStart && spec.directives === true && char === '#') {
+          const directive = /^#\s*[A-Za-z_]\w*/.exec(code.slice(index))
+          if (directive !== null) {
+            out.token('keyword', directive[0])
+            index += directive[0].length
+            if (/^#\s*(?:include|import)/.test(directive[0])) {
+              while (index < length && (code[index] === ' ' || code[index] === '\t')) {
+                out.text(code[index])
+                index += 1
+              }
+              if (code[index] === '<') {
+                const close = code.indexOf('>', index)
+                if (close !== -1) {
+                  out.token('string', code.slice(index, close + 1))
+                  index = close + 1
+                }
+              }
+            }
+            lineStart = false
+            continue
+          }
+        }
+
+        const mark = spec.lineComment.find((candidate) => code.startsWith(candidate, index))
+        if (
+          mark !== undefined &&
+          (mark !== '#' ||
+            spec.directives === true ||
+            index === 0 ||
+            /\s|[([{,:;=]/.test(code[index - 1]))
+        ) {
           const stop = code.indexOf('\n', index)
-          const end = stop === -1 ? code.length : stop
-          pushToken('comment', code.slice(index, end))
+          const end = stop === -1 ? length : stop
+          out.token('comment', code.slice(index, end))
           index = end
           continue
         }
@@ -952,46 +1162,110 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         const block = spec.blockComment.find((pair) => code.startsWith(pair[0], index))
         if (block !== undefined) {
           const close = code.indexOf(block[1], index + block[0].length)
-          const end = close === -1 ? code.length : close + block[1].length
-          pushToken('comment', code.slice(index, end))
+          const end = close === -1 ? length : close + block[1].length
+          out.token('comment', code.slice(index, end))
           index = end
           continue
         }
 
-        const char = code[index]
+        if (spec.decorators === true && char === '@') {
+          const decorator = /^@[\w.]+/.exec(code.slice(index))
+          if (decorator !== null) {
+            out.token('function', decorator[0])
+            index += decorator[0].length
+            lineStart = false
+            continue
+          }
+        }
+
+        if (spec.regex === true && char === '/') {
+          const before = previousSignificant(index)
+          const beforeChar = before >= 0 ? code[before] : ''
+          const beforeWord = previousWord(index)
+          const allowed =
+            before < 0 || regexAllowedBefore.test(beforeChar) || regexAllowedWords.has(beforeWord)
+          if (allowed) {
+            let cursor = index + 1
+            let inClass = false
+            let closed = false
+            while (cursor < length) {
+              const inner = code[cursor]
+              if (inner === '\\') {
+                cursor += 2
+                continue
+              }
+              if (inner === '\n') break
+              if (inClass) {
+                if (inner === ']') inClass = false
+                cursor += 1
+                continue
+              }
+              if (inner === '[') {
+                inClass = true
+                cursor += 1
+                continue
+              }
+              if (inner === '/') {
+                cursor += 1
+                closed = true
+                break
+              }
+              cursor += 1
+            }
+            if (closed) {
+              while (cursor < length && /[a-z]/.test(code[cursor])) cursor += 1
+              out.token('regex', code.slice(index, cursor))
+              index = cursor
+              lineStart = false
+              continue
+            }
+          }
+        }
+
         if (spec.quotes.includes(char)) {
-          let cursor = index + 1
+          const triple = spec.triple === true && code.startsWith(char + char + char, index)
+          const quote = triple ? char + char + char : char
+          let cursor = index + quote.length
           let closed = false
-          while (cursor < code.length) {
-            if (spec.escapes && code[cursor] === '\\') {
+          while (cursor < length) {
+            if (spec.escapes === true && code[cursor] === '\\') {
               cursor += 2
               continue
             }
-            if (code[cursor] === char) {
-              cursor += 1
+            if (triple ? code.startsWith(quote, cursor) : code[cursor] === char) {
+              cursor += quote.length
               closed = true
               break
             }
-            if (code[cursor] === '\n' && char !== '`') break
+            if (triple !== true && code[cursor] === '\n' && char !== '`') break
             cursor += 1
           }
           if (!closed) {
             // An unterminated quote is punctuation, not the start of a string;
             // emitting it as text keeps the rest of the block intact.
-            plain += char
+            out.text(char)
             index += 1
+            lineStart = false
             continue
           }
-          pushToken('string', code.slice(index, cursor))
+          let className = 'string'
+          if (spec.jsonKeys === true) {
+            let after = cursor
+            while (after < length && (code[after] === ' ' || code[after] === '\t')) after += 1
+            if (code[after] === ':') className = 'property'
+          }
+          out.token(className, code.slice(index, cursor))
           index = cursor
+          lineStart = false
           continue
         }
 
         HL_NUMBER.lastIndex = index
         const digits = HL_NUMBER.exec(code)
         if (digits !== null && digits.index === index) {
-          pushToken('number', digits[0])
+          out.token('number', digits[0])
           index += digits[0].length
+          lineStart = false
           continue
         }
 
@@ -1000,30 +1274,725 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         if (word !== null && word.index === index) {
           const text = word[0]
           const looked = spec.fold === true ? text.toLowerCase() : text
-          const after = code.slice(index + text.length).replace(/^[ \t]+/, '')
-          if (spec.keywords.has(looked)) {
-            pushToken('keyword', text)
-          } else if (spec.constants.has(looked)) {
-            pushToken('constant', text)
-          } else if (spec.builtins.has(looked)) {
-            pushToken('builtin', text)
-          } else if (spec.types.has(looked)) {
-            pushToken('type', text)
-          } else if (after.startsWith('(')) {
-            pushToken('function', text)
-          } else {
-            plain += text
+          let cursor = index + text.length
+          while (cursor < length && (code[cursor] === ' ' || code[cursor] === '\t')) cursor += 1
+          let className = null
+          if (spec.control !== undefined && spec.control.has(looked)) className = 'control'
+          else if (spec.keywords.has(looked)) className = 'keyword'
+          else if (spec.constants !== undefined && spec.constants.has(looked)) className = 'constant'
+          else if (spec.builtins !== undefined && spec.builtins.has(looked)) className = 'builtin'
+          else if (spec.types !== undefined && spec.types.has(looked)) className = 'type'
+          else if (spec.props !== undefined && spec.props.has(looked)) className = 'property'
+          else if (
+            spec.classNames === true &&
+            /^[A-Z][A-Za-z0-9_]*$/.test(text) &&
+            /^[A-Z0-9_]+$/.test(text) === false
+          ) {
+            className = 'type'
+          } else if (code[cursor] === '(') {
+            className = 'function'
           }
+          if (className === null) out.text(text)
+          else out.token(className, text)
           index += text.length
+          lineStart = false
           continue
         }
 
-        plain += char
+        out.text(char)
+        lineStart = lineStart && (char === ' ' || char === '\t')
         index += 1
       }
 
-      flushPlain()
-      return parts
+      return out.done()
+    }
+
+    const HL_SHELL_WORD_STOP = /[\s|;&<>()"'`$=\\]/
+
+    /** Bash and friends: the command position decides what a word means. */
+    function tokenizeShell(code, spec) {
+      const out = codeEmitter()
+      const length = code.length
+      const storesCommand = new Set(['if', 'then', 'else', 'elif', 'for', 'while', 'until', 'do', 'case', 'in', 'select'])
+      let index = 0
+      let expectCommand = true
+
+      while (index < length) {
+        const char = code[index]
+
+        if (char === '\n') {
+          out.text(char)
+          index += 1
+          expectCommand = true
+          continue
+        }
+        if (char === ' ' || char === '\t') {
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (char === '\\') {
+          if (code[index + 1] === '\n') {
+            out.text('\\\n')
+            index += 2
+            continue
+          }
+          out.text(code.slice(index, index + 2))
+          index += 2
+          continue
+        }
+        if (char === '#' && (index === 0 || /[\s;|&(]/.test(code[index - 1]))) {
+          const stop = code.indexOf('\n', index)
+          const end = stop === -1 ? length : stop
+          out.token('comment', code.slice(index, end))
+          index = end
+          continue
+        }
+        if (char === "'" || char === '"') {
+          let cursor = index + 1
+          let closed = false
+          while (cursor < length) {
+            if (char === '"' && code[cursor] === '\\') {
+              cursor += 2
+              continue
+            }
+            if (code[cursor] === char) {
+              cursor += 1
+              closed = true
+              break
+            }
+            if (code[cursor] === '\n') break
+            cursor += 1
+          }
+          if (!closed) {
+            out.text(char)
+            index += 1
+            continue
+          }
+          out.token('string', code.slice(index, cursor))
+          index = cursor
+          expectCommand = false
+          continue
+        }
+        if (char === '`') {
+          let cursor = index + 1
+          let closed = false
+          while (cursor < length) {
+            if (code[cursor] === '\\') {
+              cursor += 2
+              continue
+            }
+            if (code[cursor] === '`') {
+              cursor += 1
+              closed = true
+              break
+            }
+            cursor += 1
+          }
+          if (!closed) {
+            out.text(char)
+            index += 1
+            continue
+          }
+          out.token('string', code.slice(index, cursor))
+          index = cursor
+          continue
+        }
+        if (char === '$') {
+          const end = readShellVariable(code, index)
+          if (end !== null) {
+            out.token('variable', code.slice(index, end))
+            index = end
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (char === '|') {
+          if (code[index + 1] === '|') {
+            out.text('||')
+            index += 2
+          } else {
+            out.text('|')
+            index += 1
+          }
+          expectCommand = true
+          continue
+        }
+        if (char === '&' && code[index + 1] === '&') {
+          out.text('&&')
+          index += 2
+          expectCommand = true
+          continue
+        }
+        if (char === ';') {
+          out.text(';')
+          index += 1
+          expectCommand = true
+          continue
+        }
+        if (char === '(' || char === ')') {
+          out.text(char)
+          index += 1
+          if (char === '(') expectCommand = true
+          continue
+        }
+        if (char === '=' || char === '<' || char === '>') {
+          out.text(char)
+          index += 1
+          continue
+        }
+
+        let cursor = index
+        while (cursor < length && HL_SHELL_WORD_STOP.test(code[cursor]) === false) cursor += 1
+        if (cursor === index) {
+          out.text(char)
+          index += 1
+          continue
+        }
+        const word = code.slice(index, cursor)
+        index = cursor
+        const lower = spec.fold === true ? word.toLowerCase() : word
+        const atCommand = expectCommand
+        const assignment = code[index] === '=' && /^[A-Za-z_]\w*$/.test(word)
+
+        if (spec.instructions !== undefined && spec.instructions.has(word.toUpperCase())) {
+          out.token('keyword', word)
+          expectCommand = true
+          continue
+        }
+        if (word.startsWith('-') && word.length > 1) {
+          out.token('constant', word)
+          expectCommand = false
+          continue
+        }
+        if (assignment) {
+          out.token('property', word)
+          continue
+        }
+        if (/^[\d.]+$/.test(word)) {
+          out.token('number', word)
+          expectCommand = false
+          continue
+        }
+        if (spec.keywords.has(lower)) {
+          out.token('keyword', word)
+          expectCommand = storesCommand.has(lower)
+          continue
+        }
+        if (spec.constants !== undefined && spec.constants.has(lower)) {
+          out.token('constant', word)
+          expectCommand = false
+          continue
+        }
+        if (atCommand && spec.prefixes !== undefined && spec.prefixes.has(lower)) {
+          out.token('builtin', word)
+          continue
+        }
+        if (atCommand) {
+          if (spec.builtins !== undefined && spec.builtins.has(lower)) out.token('builtin', word)
+          else out.token('function', word)
+          expectCommand = false
+          continue
+        }
+        if (word.includes('/')) {
+          out.token('type', word)
+          continue
+        }
+        if (spec.builtins !== undefined && spec.builtins.has(lower)) {
+          out.token('builtin', word)
+          continue
+        }
+        out.text(word)
+      }
+
+      return out.done()
+    }
+
+    /** YAML: keys, plain scalars, anchors and comments, one line at a time. */
+    function tokenizeYaml(code) {
+      const out = codeEmitter()
+      const lines = code.split('\n')
+      for (let index = 0; index < lines.length; index += 1) {
+        if (index > 0) out.text('\n')
+        paintYamlLine(lines[index], out)
+      }
+      return out.done()
+    }
+
+    function paintYamlLine(line, out) {
+      const indent = /^[ \t]*/.exec(line)[0]
+      out.text(indent)
+      let rest = line.slice(indent.length)
+      if (rest === '') return
+
+      if (rest[0] === '#') {
+        out.token('comment', rest)
+        return
+      }
+      if (/^(?:---|\.\.\.)\s*$/.test(rest)) {
+        out.token('comment', rest)
+        return
+      }
+      if (/^-(\s|$)/.test(rest)) {
+        out.token('keyword', '-')
+        rest = rest.slice(1)
+        if (rest[0] === ' ') {
+          out.text(' ')
+          rest = rest.slice(1)
+        }
+        if (rest === '') return
+        if (rest[0] === '#') {
+          out.token('comment', rest)
+          return
+        }
+      }
+
+      const pair = /^([^\s#:][^:#]*?)([ \t]*)(:)(?=[ \t]|$)/.exec(rest)
+      if (pair !== null) {
+        out.token('property', pair[1])
+        out.text(pair[2] + ':')
+        paintYamlValue(rest.slice(pair[0].length), out)
+        return
+      }
+      paintYamlValue(rest, out)
+    }
+
+    function paintYamlValue(text, out) {
+      let index = 0
+      while (index < text.length) {
+        const char = text[index]
+        if (char === '#' && (index === 0 || /[ \t]/.test(text[index - 1]))) {
+          out.token('comment', text.slice(index))
+          return
+        }
+        if (char === '"' || char === "'") {
+          let cursor = index + 1
+          let closed = false
+          while (cursor < text.length) {
+            if (char === '"' && text[cursor] === '\\') {
+              cursor += 2
+              continue
+            }
+            if (text[cursor] === char) {
+              if (char === "'" && text[cursor + 1] === "'") {
+                cursor += 2
+                continue
+              }
+              cursor += 1
+              closed = true
+              break
+            }
+            cursor += 1
+          }
+          if (closed) {
+            out.token('string', text.slice(index, cursor))
+            index = cursor
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (char === '&' || char === '*') {
+          const name = /^[&*][\w-]+/.exec(text.slice(index))
+          if (name !== null && (index === 0 || /[ \t]/.test(text[index - 1]))) {
+            out.token('type', name[0])
+            index += name[0].length
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if ((char === '|' || char === '>') && /^[ \t]*$/.test(text.slice(index + 1))) {
+          out.token('keyword', char)
+          index += 1
+          continue
+        }
+        if (char === '~') {
+          out.token('constant', char)
+          index += 1
+          continue
+        }
+        if (/[A-Za-z_]/.test(char)) {
+          let cursor = index
+          while (cursor < text.length && /[\w.-]/.test(text[cursor])) cursor += 1
+          const word = text.slice(index, cursor)
+          const lower = word.toLowerCase()
+          if (['true', 'false', 'null', 'yes', 'no', 'on', 'off'].includes(lower)) out.token('constant', word)
+          else out.text(word)
+          index = cursor
+          continue
+        }
+        if (/\d/.test(char)) {
+          const number = /^\d[\d.:+-]*/.exec(text.slice(index))
+          if (number !== null) {
+            out.token('number', number[0])
+            index += number[0].length
+            continue
+          }
+        }
+        out.text(char)
+        index += 1
+      }
+    }
+
+    /** CSS: selectors versus declarations, decided by the next `{` or `;`. */
+    function tokenizeCss(code) {
+      const out = codeEmitter()
+      const length = code.length
+      let index = 0
+
+      const statementHitsBrace = (from) => {
+        for (let cursor = from; cursor < length; cursor += 1) {
+          const char = code[cursor]
+          if (char === '{') return true
+          if (char === ';' || char === '}' || char === ')' || char === ',') return false
+        }
+        return false
+      }
+      const propertyAhead = (from) => {
+        let cursor = from
+        while (cursor < length && (code[cursor] === ' ' || code[cursor] === '\t')) cursor += 1
+        return code[cursor] === ':' && code[cursor + 1] !== ':'
+      }
+
+      while (index < length) {
+        const char = code[index]
+        if (char === '\n') {
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (code.startsWith('/*', index)) {
+          const close = code.indexOf('*/', index + 2)
+          const end = close === -1 ? length : close + 2
+          out.token('comment', code.slice(index, end))
+          index = end
+          continue
+        }
+        if (char === '"' || char === "'") {
+          let cursor = index + 1
+          let closed = false
+          while (cursor < length) {
+            if (code[cursor] === '\\') {
+              cursor += 2
+              continue
+            }
+            if (code[cursor] === char) {
+              cursor += 1
+              closed = true
+              break
+            }
+            if (code[cursor] === '\n') break
+            cursor += 1
+          }
+          if (closed) {
+            out.token('string', code.slice(index, cursor))
+            index = cursor
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (char === '@') {
+          const at = /^@[\w-]+/.exec(code.slice(index))
+          if (at !== null) {
+            out.token('keyword', at[0])
+            index += at[0].length
+            continue
+          }
+        }
+        if (char === '!') {
+          const important = /^!\s*important/.exec(code.slice(index))
+          if (important !== null) {
+            out.token('keyword', important[0])
+            index += important[0].length
+            continue
+          }
+        }
+        if (char === '#' && /^#[0-9a-fA-F]{3,8}(?![\w-])/.test(code.slice(index))) {
+          const hex = /^#[0-9a-fA-F]{3,8}/.exec(code.slice(index))[0]
+          out.token('number', hex)
+          index += hex.length
+          continue
+        }
+        if (char === '-' && code[index + 1] === '-') {
+          const custom = /^--[\w-]+/.exec(code.slice(index))
+          if (custom !== null) {
+            out.token('property', custom[0])
+            index += custom[0].length
+            continue
+          }
+        }
+        if (/[A-Za-z_]/.test(char) || (char === '-' && /[A-Za-z_]/.test(code[index + 1] ?? ''))) {
+          const word = /^-?[A-Za-z_][\w-]*/.exec(code.slice(index))[0]
+          const end = index + word.length
+          const previous = index === 0 ? '' : code[index - 1]
+          if (previous === '.' || previous === '#') out.token('tag', word)
+          else if (statementHitsBrace(end)) out.token('tag', word)
+          else if (propertyAhead(end)) out.token('property', word)
+          else if (code[end] === '(') out.token('function', word)
+          else out.text(word)
+          index = end
+          continue
+        }
+        if (/\d/.test(char)) {
+          const number = /^\d+\.?\d*(?:%|[A-Za-z]+)?/.exec(code.slice(index))
+          if (number !== null) {
+            out.token('number', number[0])
+            index += number[0].length
+            continue
+          }
+        }
+        out.text(char)
+        index += 1
+      }
+
+      return out.done()
+    }
+
+    /** HTML/XML: tags, attributes and entities. */
+    function tokenizeMarkup(code) {
+      const out = codeEmitter()
+      const length = code.length
+      let index = 0
+      let inTag = false
+
+      while (index < length) {
+        const char = code[index]
+        if (code.startsWith('<!--', index)) {
+          const close = code.indexOf('-->', index + 4)
+          const end = close === -1 ? length : close + 3
+          out.token('comment', code.slice(index, end))
+          index = end
+          continue
+        }
+        if (code.startsWith('<![CDATA[', index)) {
+          const close = code.indexOf(']]>', index + 9)
+          const end = close === -1 ? length : close + 3
+          out.token('comment', code.slice(index, end))
+          index = end
+          continue
+        }
+        if (char === '<') {
+          const declaration = /^<![A-Za-z]/.exec(code.slice(index))
+          if (declaration !== null) {
+            const close = code.indexOf('>', index)
+            const end = close === -1 ? length : close + 1
+            out.token('comment', code.slice(index, end))
+            index = end
+            continue
+          }
+          const opener = /^<\/?/.exec(code.slice(index))
+          const name = /^[A-Za-z][\w:.-]*/.exec(code.slice(index + (opener === null ? 0 : opener[0].length)))
+          if (opener !== null && name !== null) {
+            out.text(opener[0])
+            index += opener[0].length
+            out.token('tag', name[0])
+            index += name[0].length
+            inTag = true
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (inTag) {
+          if (char === '>') {
+            out.text('>')
+            index += 1
+            inTag = false
+            continue
+          }
+          if (char === '/' && code[index + 1] === '>') {
+            out.text('/>')
+            index += 2
+            inTag = false
+            continue
+          }
+          if (char === '"' || char === "'") {
+            let cursor = index + 1
+            let closed = false
+            while (cursor < length) {
+              if (code[cursor] === char) {
+                cursor += 1
+                closed = true
+                break
+              }
+              cursor += 1
+            }
+            if (closed) {
+              out.token('string', code.slice(index, cursor))
+              index = cursor
+              continue
+            }
+          }
+          if (/[A-Za-z_:]/.test(char)) {
+            const name = /^[A-Za-z_:][\w:.-]*/.exec(code.slice(index))[0]
+            out.token('property', name)
+            index += name.length
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (char === '&') {
+          const entity = /^&[#\w]+;/.exec(code.slice(index))
+          if (entity !== null) {
+            out.token('constant', entity[0])
+            index += entity[0].length
+            continue
+          }
+        }
+        out.text(char)
+        index += 1
+      }
+
+      return out.done()
+    }
+
+    /** INI/TOML: sections, keys and simple values. */
+    function tokenizeIni(code) {
+      const out = codeEmitter()
+      const lines = code.split('\n')
+      for (let index = 0; index < lines.length; index += 1) {
+        if (index > 0) out.text('\n')
+        const line = lines[index]
+        const indent = /^[ \t]*/.exec(line)[0]
+        out.text(indent)
+        const rest = line.slice(indent.length)
+        if (rest === '') continue
+        if (rest[0] === '#' || rest[0] === ';') {
+          out.token('comment', rest)
+          continue
+        }
+        const section = /^\[[^\]]*\]/.exec(rest)
+        if (section !== null) {
+          out.token('tag', section[0])
+          out.text(rest.slice(section[0].length))
+          continue
+        }
+        const pair = /^([^=:\s][^=:]*?)([ \t]*)([=:])(?=[ \t]|$)/.exec(rest)
+        if (pair !== null) {
+          out.token('property', pair[1])
+          out.text(pair[2] + pair[3])
+          paintIniValue(rest.slice(pair[0].length), out)
+          continue
+        }
+        paintIniValue(rest, out)
+      }
+      return out.done()
+    }
+
+    function paintIniValue(text, out) {
+      let index = 0
+      while (index < text.length) {
+        const char = text[index]
+        if ((char === '#' || char === ';') && (index === 0 || /[ \t]/.test(text[index - 1]))) {
+          out.token('comment', text.slice(index))
+          return
+        }
+        if (char === '"' || char === "'") {
+          let cursor = index + 1
+          let closed = false
+          while (cursor < text.length) {
+            if (text[cursor] === '\\') {
+              cursor += 2
+              continue
+            }
+            if (text[cursor] === char) {
+              cursor += 1
+              closed = true
+              break
+            }
+            cursor += 1
+          }
+          if (closed) {
+            out.token('string', text.slice(index, cursor))
+            index = cursor
+            continue
+          }
+          out.text(char)
+          index += 1
+          continue
+        }
+        if (/[A-Za-z_]/.test(char)) {
+          let cursor = index
+          while (cursor < text.length && /[\w.-]/.test(text[cursor])) cursor += 1
+          const word = text.slice(index, cursor)
+          if (['true', 'false', 'null', 'yes', 'no', 'on', 'off'].includes(word.toLowerCase())) {
+            out.token('constant', word)
+          } else out.text(word)
+          index = cursor
+          continue
+        }
+        if (/\d/.test(char)) {
+          const number = /^\d[\d.:+-]*/.exec(text.slice(index))
+          if (number !== null) {
+            out.token('number', number[0])
+            index += number[0].length
+            continue
+          }
+        }
+        out.text(char)
+        index += 1
+      }
+    }
+
+    /** Best guess for an unlabelled fence; null when nothing recognisable. */
+    function detectLanguage(code) {
+      const sample = String(code ?? '').trim()
+      if (sample === '') return null
+      if (/^<(!doctype|html|\?xml|svg)\b/i.test(sample)) return 'xml'
+      if (/^#!.*\bpython/.test(sample)) return 'python'
+      if (/^#!\s*\S*\/(?:env\s+)?(?:ba|z|k|fi)?sh\b/.test(sample)) return 'bash'
+      if (/^#!.*\bnode\b/.test(sample)) return 'javascript'
+      if (/(^|\n)\s*FROM\s+\S/.test(sample) && /(^|\n)\s*(RUN|COPY|ADD|CMD|ENTRYPOINT|WORKDIR)\s/.test(sample)) {
+        return 'dockerfile'
+      }
+      if (/^\s*[{[]/.test(sample)) {
+        try {
+          JSON.parse(sample)
+          return 'json'
+        } catch {
+          // not JSON after all
+        }
+      }
+      if (/(^|\n)\s*(SELECT|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE)\b/i.test(sample)) {
+        return 'sql'
+      }
+      if (/(^|\n)\s*(package\s+\w+|func\s+\w+\s*\(|type\s+\w+\s+struct)\b/.test(sample)) return 'go'
+      if (/(^|\n)\s*(def\s+\w+\s*\(|class\s+\w+|from\s+[\w.]+\s+import\s|import\s+[\w.]+\s*$)/.test(sample)) {
+        return 'python'
+      }
+      if (/(^|\n)#include\s*[<"]/.test(sample)) return 'c'
+      if (/(^|\n)\s*(public\s+)?(class|interface)\s+\w+/.test(sample)) return 'java'
+      if (/(^|\n)\s*(fn\s+\w+|let\s+mut\s+|pub\s+fn\s+|use\s+[\w:]+;)/.test(sample)) return 'rust'
+      if (/(^|\n)\s*(function\s+\w+|const\s+\w+\s*=|let\s+\w+\s*=|=>|export\s+(default\s+)?(function|const|class))/.test(sample)) {
+        return 'javascript'
+      }
+      if (/(^|\n)\s*[\w.-]+\s*:\s+\S/.test(sample) && /(^|\n)\s*-\s+\S/.test(sample)) return 'yaml'
+      if (/(^|\n)\s*(int|void|char|float|double|unsigned|static|struct)\s+\w+\s*\(/.test(sample)) return 'c'
+      if (/(^|\n)\s*[.#@]?[\w-]+\s*\{[^}]*[\w-]+\s*:/.test(sample)) return 'css'
+      return null
+    }
+
+    /** Parts for one code string, or null when the language is not painted. */
+    function codeParts(code, language) {
+      const key = String(language ?? '').trim().toLowerCase()
+      if (HL_PLAIN.has(key)) return null
+      let spec = HL_SPECS[HL_ALIASES[key] ?? key]
+      if (spec === undefined) {
+        const guess = detectLanguage(code)
+        if (guess !== null) spec = HL_SPECS[guess]
+      }
+      if (spec === undefined) return null
+      return tokenizeCode(code, spec)
     }
 
     /**
@@ -1033,11 +2002,8 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
      * the preview.
      */
     function highlightCode(code, language) {
-      const key = String(language ?? '').trim().toLowerCase()
-      const name = HL_ALIASES[key] ?? key
-      const spec = HL_SPECS[name]
-      if (spec === undefined) return code
-      const parts = tokenizeCode(code, spec)
+      const parts = codeParts(code, language)
+      if (parts === null) return code
       let counter = 0
       let coloured = false
       const children = parts.map((part) => {
@@ -1048,6 +2014,43 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         return node
       })
       return coloured ? children : code
+    }
+
+    /**
+     * Split highlighted parts back onto their source lines.
+     *
+     * The editor needs the same colours as the preview, but its mirror layer is
+     * one element per line, so a token that spans a newline becomes one span
+     * per line. Rendered text still matches `lines` exactly.
+     */
+    function paintCodeLines(lines, language) {
+      const parts = codeParts(lines.join('\n'), language)
+      if (parts === null) return lines.map((line) => line)
+      const perLine = lines.map(() => [])
+      let line = 0
+      let counter = 0
+      for (const part of parts) {
+        const text = typeof part === 'string' ? part : part.text
+        const className = typeof part === 'string' ? null : part.className
+        const pieces = text.split('\n')
+        for (let piece = 0; piece < pieces.length; piece += 1) {
+          if (piece > 0) line += 1
+          if (pieces[piece] === '') continue
+          const target = perLine[Math.min(line, perLine.length - 1)]
+          if (className === null) target.push(pieces[piece])
+          else {
+            target.push(
+              h(
+                'span',
+                { key: `c${line}:${counter}`, className: `lmn-tok-${className}` },
+                pieces[piece],
+              ),
+            )
+            counter += 1
+          }
+        }
+      }
+      return perLine.map((children) => (children.length === 1 ? children[0] : children))
     }
 
     // --- Edit-time highlighting ---------------------------------------------
@@ -1112,14 +2115,21 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     function looksLikeCommandNote(lines) {
       let commands = 0
       let prose = 0
+      let fence = null
       for (const line of lines) {
+        if (fence !== null) {
+          if (line.trim() === fence) fence = null
+          continue
+        }
+        const opened = MD_FENCE.exec(line)
+        if (opened !== null) {
+          // Code inside a fence is not a Markdown line; counting it as a command
+          // would repaint prose documents that merely contain a snippet.
+          fence = opened[1]
+          continue
+        }
         if (line.trim() === '') continue
-        if (
-          MD_EDIT_HEADING.test(line) ||
-          MD_EDIT_QUOTE.test(line) ||
-          MD_EDIT_BULLET.test(line) ||
-          MD_FENCE.test(line)
-        ) {
+        if (MD_EDIT_HEADING.test(line) || MD_EDIT_QUOTE.test(line) || MD_EDIT_BULLET.test(line)) {
           continue
         }
         const head = RX_COMMAND_LINE.exec(line)
@@ -1189,28 +2199,36 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       }
 
       const out = []
-      let fence = null
       const commandNote = looksLikeCommandNote(lines)
 
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]
         const key = index
 
-        if (fence !== null) {
-          if (line.trim() === fence.marker) {
-            fence = null
-            out.push(h('div', { key, className: 'lmn-hl-line' }, h('span', { className: 'lmn-tok-comment' }, line)))
-            continue
-          }
-          const painted = fence.language === '' ? line : highlightCode(line, fence.language)
-          out.push(h('div', { key, className: 'lmn-hl-line' }, painted))
-          continue
-        }
-
         const opened = MD_FENCE.exec(line)
         if (opened !== null) {
-          fence = { marker: opened[1], language: String(opened[2] ?? '').trim().toLowerCase() }
+          // Scan the whole fence once: a block is highlighted as one string, so
+          // block comments and multi-line strings stay intact across lines.
+          const marker = opened[1]
+          const language = String(opened[2] ?? '').trim().toLowerCase()
           out.push(h('div', { key, className: 'lmn-hl-line' }, h('span', { className: 'lmn-tok-comment' }, line)))
+          let end = index + 1
+          while (end < lines.length && lines[end].trim() !== marker) end += 1
+          const body = lines.slice(index + 1, end)
+          const painted = paintCodeLines(body, language)
+          for (let offset = 0; offset < body.length; offset += 1) {
+            out.push(h('div', { key: index + 1 + offset, className: 'lmn-hl-line' }, painted[offset]))
+          }
+          if (end < lines.length) {
+            out.push(
+              h(
+                'div',
+                { key: end, className: 'lmn-hl-line' },
+                h('span', { className: 'lmn-tok-comment' }, lines[end]),
+              ),
+            )
+          }
+          index = end
           continue
         }
 

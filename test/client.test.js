@@ -242,21 +242,21 @@ function textsOf(node) {
 
 /** Mount the panel with a stateful runtime and a working fake namespace. */
 async function mountPanel(options) {
-  const { namespace, timers = true, localStorage } = options
+  const { namespace, timers = true, localStorage, conversation, uiWorkspace, sessions, workspaces } = options
   const runtime = createHookRuntime()
   const client = loadClient({ react: runtime.react, localStorage })
-  const { ctx, record } = fakeCtx({ namespace })
+  const { ctx, record } = fakeCtx({ namespace, conversation, uiWorkspace, sessions, workspaces })
   await client.plugin.apply(ctx)
 
   const main = record.slots.find((slot) => slot.options.name === 'main')
   assert.ok(main, 'main registration exists')
-  const { api, t } = main.options.inject()
+  const { api, t, chat } = main.options.inject()
 
   const timerQueue = timers ? installTimerQueue(client.window) : null
-  runtime.mount(() => main.component({ api, t }))
+  runtime.mount(() => main.component({ api, t, chat }))
   await runtime.flush()
 
-  return { ...client, runtime, record, ctx, api, t, timerQueue, component: main.component }
+  return { ...client, runtime, record, ctx, api, t, chat, timerQueue, component: main.component }
 }
 
 /**
@@ -269,7 +269,7 @@ async function mountPanel(options) {
  */
 async function remount(panel) {
   panel.runtime.reset()
-  panel.runtime.mount(() => panel.component({ api: panel.api, t: panel.t }))
+  panel.runtime.mount(() => panel.component({ api: panel.api, t: panel.t, chat: panel.chat }))
   await panel.runtime.flush()
   return panel
 }
@@ -297,7 +297,15 @@ function fakeStorage(seed) {
  * real sequencing: `remote.notes` only exists once the mount has resolved.
  */
 function fakeCtx(options = {}) {
-  const { mountFails = null, namespace = undefined, inputTriggers = undefined } = options
+  const {
+    mountFails = null,
+    namespace = undefined,
+    inputTriggers = undefined,
+    conversation = undefined,
+    uiWorkspace = undefined,
+    sessions = undefined,
+    workspaces = undefined,
+  } = options
   const record = {
     effects: [],
     locales: [],
@@ -344,6 +352,10 @@ function fakeCtx(options = {}) {
     },
     get(name) {
       if (name === 'inputTriggers') return inputTriggers
+      if (name === 'conversation') return conversation
+      if (name === 'uiWorkspace') return uiWorkspace
+      if (name === 'sessions') return sessions
+      if (name === 'workspaces') return workspaces
       return name === 'remote.notes' ? namespace : undefined
     },
     // Cordis starts the callback in a scoped fiber once every named service is
@@ -536,7 +548,7 @@ test('the sidebar entry id equals the main panel key so the layout can select it
   assert.equal(main.options.locale, NS)
   assert.equal(typeof sidebar.options.label, 'function')
   assert.equal(typeof main.options.inject, 'function')
-  assert.deepEqual([...Object.keys(main.options.inject())], ['api', 't'])
+  assert.deepEqual([...Object.keys(main.options.inject())], ['api', 't', 'chat'])
 })
 
 test('every mounted descriptor carries the notesRemote service key', async () => {
@@ -751,12 +763,12 @@ const PROJECT = { id: 'p1', name: 'ovs学习', rootPath: 'D:\dpu 资料\ovs学�
  * of one folder and the Git panes without a Host.
  */
 function treeNamespace(options = {}) {
-  const { entriesByPath = {}, blameFails = false, blameEntries = [], diff } = options
+  const { entriesByPath = {}, blameFails = false, blameEntries = [], diff, project = PROJECT } = options
   const calls = []
   const namespace = {
     async listProjects() {
       calls.push(['listProjects'])
-      return { ok: true, value: { projects: [PROJECT] } }
+      return { ok: true, value: { projects: [project] } }
     },
     async listEntries(projectId, relativePath) {
       calls.push(['listEntries', projectId, relativePath])
@@ -832,6 +844,15 @@ function rowActions(panel, label) {
     label === '' ? String(item.props.className).includes('lmn-row-root') : textsOf(item).includes(label),
   )
   assert.ok(row, `the folder row ${label === '' ? '<root>' : label} renders`)
+  return findAll(row, 'lmn-iconbtn')
+}
+
+/** The buttons rendered inline on the file row that names `label`. */
+function fileActions(panel, label) {
+  const row = findAll(panel.runtime.tree(), 'lmn-row').find(
+    (item) => String(item.props.className).includes('lmn-row') && !String(item.props.className).includes('lmn-row-root') && textsOf(item).includes(label),
+  )
+  assert.ok(row, `the file row ${label} renders`)
   return findAll(row, 'lmn-iconbtn')
 }
 
@@ -1341,13 +1362,13 @@ test('the create actions ride on folder rows instead of the section header', asy
   assert.equal(headerButtons(panel).length, 0, 'the header stays bare after a project opens')
   assert.deepEqual(
     rowActions(panel, '').map((button) => button.props.title),
-    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`],
-    'the open project row offers both create actions',
+    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`, `${NS}:panel.addToChat`],
+    'the open project row offers both create actions and the hand-to-chat action',
   )
   assert.deepEqual(
     rowActions(panel, 'sub').map((button) => button.props.title),
-    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`],
-    'every folder row offers both create actions',
+    [`${NS}:panel.newFile`, `${NS}:panel.newFolder`, `${NS}:panel.addToChat`],
+    'every folder row offers both create actions and the hand-to-chat action',
   )
 })
 
@@ -2765,4 +2786,244 @@ test('a corrupt candidate value yields no insertion instead of throwing', async 
   assert.equal(outcome.text, '')
   assert.equal(outcome.continue, false)
   assert.equal(outcome.insert, undefined, 'nothing is inserted for an unreadable candidate')
+})
+
+
+// ---------------------------------------------------------------------------
+// The row button that opens a new chat on a note
+// ---------------------------------------------------------------------------
+
+/** A real root, so the mention normalisation is the thing under test. */
+const REAL_ROOT = 'D:\\dpu 资料\\ovs学习'
+
+/**
+ * The four host services the button talks to, all recording into one timeline.
+ *
+ * The order is the contract: create the session, navigate to it (navigating is
+ * what retains its binding), build its message box, then add the chip. Any
+ * other order either throws in the host or loses the chip to a draft restore,
+ * so the timeline is asserted as a whole rather than per call.
+ */
+function chatFixture(options = {}) {
+  const {
+    result = true,
+    created = 's2',
+    snapshot = { sessionId: 's1' },
+    items = [{ workspaceId: 'w1', sessionIds: ['s1'] }],
+  } = options
+  const order = []
+  const created_with = []
+  const sent = []
+
+  const conversation = {
+    input: {
+      shell(sessionId) {
+        order.push(`shell:${sessionId}`)
+        if (result instanceof Error) throw result
+        return {
+          addFiles(references, ids) {
+            order.push('addFiles')
+            sent.push(references[0])
+            assert.equal(references.length, 1, 'one row opens one chat with one chip')
+            assert.deepEqual(Array.from(ids), [], 'a note is a reference, not an uploaded attachment')
+            return result
+          },
+        }
+      },
+    },
+  }
+
+  const uiWorkspace = {
+    selection: { getSnapshot: () => snapshot },
+    openSession(sessionId) {
+      order.push(`openSession:${sessionId}`)
+    },
+  }
+
+  const sessions = {
+    async create(request) {
+      created_with.push(request)
+      order.push('create')
+      if (created instanceof Error) throw created
+      return created
+    },
+  }
+
+  const workspaces = { list: { getSnapshot: () => ({ items }) } }
+
+  return { conversation, uiWorkspace, sessions, workspaces, order, created_with, sent }
+}
+
+/** Mount one project rooted at a real Windows path and expand its root row. */
+async function mountRooted(extra = {}) {
+  const project = { ...PROJECT, rootPath: REAL_ROOT }
+  const entriesByPath = extra.entriesByPath ?? { '': [{ path: 'a.md', name: 'a.md', type: 'file' }] }
+  const { namespace } = treeNamespace({ entriesByPath, project })
+  const panel = await mountPanel({ namespace, ...extra.mount })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  return panel
+}
+
+/** The new-chat button on the row whose label is `label` ('' is the root row). */
+function chatButton(panel, label) {
+  const buttons = label === '' ? rowActions(panel, '') : fileActions(panel, label)
+  const button = buttons.find((item) => item.props.title === `${NS}:panel.addToChat`)
+  assert.ok(button, `the row "${label || '<project root>'}" offers the new-chat action`)
+  return button
+}
+
+test('a file row opens a new chat and puts the note in its message box', async () => {
+  const fixture = chatFixture()
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  // Rebuilt as a plain object before comparing: the value the panel handed back
+  // was created inside the panel's sandbox realm, so its prototype is that
+  // realm's Object.prototype and a strict compare would fail on identity.
+  const requests = fixture.created_with.map((request) => ({ workspaceId: request.workspaceId }))
+  assert.deepEqual(requests, [{ workspaceId: 'w1' }], 'the chat opens in the workspace on screen')
+  assert.deepEqual(
+    fixture.order,
+    ['create', 'openSession:s2', 'shell:s2', 'addFiles'],
+    'the session exists, is navigated to, and only then receives the chip',
+  )
+  assert.ok(textsOf(panel.runtime.tree()).includes(`${NS}:panel.addedToChat`), 'the toolbar says a chat opened')
+})
+
+test('the chip is built the way the host builds a dragged file', async () => {
+  const fixture = chatFixture()
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  // The reference shape is the host's own file-drag shape. A chip built any
+  // other way renders as plain text and never resolves back to the note.
+  // Spread into this realm's plain object first: the panel built its copy
+  // inside the sandbox, so a strict compare would fail on the prototype alone.
+  const mention = '@"D:/dpu 资料/ovs学习/a.md"'
+  assert.deepEqual({ ...fixture.sent[0] }, {
+    source: 'reference',
+    ref: mention,
+    label: 'a.md',
+    appearance: 'file',
+    clipboardText: mention,
+  })
+})
+
+test('a folder row offers the whole folder and marks the chip as one', async () => {
+  const fixture = chatFixture()
+  const panel = await mountRooted({
+    entriesByPath: { '': [{ path: '笔记', name: '笔记', type: 'directory' }] },
+    mount: fixture,
+  })
+
+  await click(panel.runtime, chatButton(panel, '笔记'))
+
+  const reference = fixture.sent[0]
+  assert.equal(reference.appearance, 'folder', 'the composer draws a folder icon for it')
+  assert.equal(reference.label, '笔记/')
+  assert.equal(reference.ref, '@"D:/dpu 资料/ovs学习/笔记/')
+  assert.equal(reference.source, 'reference')
+})
+
+test('the project root row opens a chat on the folder the project stands for', async () => {
+  const fixture = chatFixture()
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, ''))
+
+  assert.equal(fixture.sent[0].appearance, 'folder')
+  assert.equal(fixture.sent[0].ref, '@"D:/dpu 资料/ovs学习/')
+  assert.equal(fixture.sent[0].label, 'ovs学习/')
+})
+
+test('a path without spaces is sent as a bare mention', async () => {
+  const fixture = chatFixture()
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [{ path: 'a.md', name: 'a.md', type: 'file' }] },
+    project: { ...PROJECT, rootPath: 'C:/notes' },
+  })
+  const panel = await mountPanel({ namespace, ...fixture })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.equal(fixture.sent[0].ref, '@C:/notes/a.md', 'quoting is only for paths that need it')
+})
+
+test('a panel with no conversation service says so instead of doing nothing', async () => {
+  const panel = await mountRooted({ mount: {} })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.ok(
+    textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatUnavailable`),
+    'a quiet note beats a silent no-op',
+  )
+})
+
+test('a session with no workspace behind it is reported as unavailable', async () => {
+  const fixture = chatFixture({ snapshot: {} })
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.deepEqual(fixture.created_with, [], 'no chat is created without a workspace to hold it')
+  assert.ok(textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatUnavailable`))
+})
+
+test('a workspace list that does not mention the session is reported as unavailable', async () => {
+  const fixture = chatFixture({ items: [{ workspaceId: 'w9', sessionIds: ['other'] }] })
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.deepEqual(fixture.created_with, [])
+  assert.ok(textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatUnavailable`))
+})
+
+test('a chat that cannot be created is reported as a failure', async () => {
+  const fixture = chatFixture({ created: new Error('session create refused') })
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.deepEqual(fixture.order, ['create'], 'nothing is navigated to or added when creation fails')
+  assert.ok(textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatFailed`))
+})
+
+test('a creation that resolves no session id is reported as a failure', async () => {
+  // `null`, not `undefined`: an undefined option falls back to the default id.
+  const fixture = chatFixture({ created: null })
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.deepEqual(fixture.order, ['create'])
+  assert.ok(textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatFailed`))
+})
+
+test('a message box that refuses the chip reports it as busy', async () => {
+  const fixture = chatFixture({ result: false })
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.ok(
+    textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatBusy`),
+    'a frozen message box is reported as busy rather than added',
+  )
+})
+
+test('a message box that throws on the chip is reported as a failure', async () => {
+  const fixture = chatFixture({ result: new Error('conversation.input: session "s2" resolved no binding') })
+  const panel = await mountRooted({ mount: fixture })
+
+  await click(panel.runtime, chatButton(panel, 'a.md'))
+
+  assert.ok(
+    textsOf(panel.runtime.tree()).includes(`${NS}:panel.chatFailed`),
+    'a throwing shell never breaks the panel',
+  )
 })

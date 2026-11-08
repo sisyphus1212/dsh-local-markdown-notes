@@ -80,6 +80,11 @@ const NOTES_SOURCE = 'local-notes'
       'panel.cancel': '取消',
       'panel.deletedNotice': '文件已删除',
       'reference.section': '笔记',
+      'panel.addToChat': '新建会话并加入此笔记',
+      'panel.addedToChat': '已新建会话，笔记已在输入框',
+      'panel.chatUnavailable': '当前没有可用的会话空间。',
+      'panel.chatBusy': '新会话的消息框暂时不能接收，稍后再试。',
+      'panel.chatFailed': '新建会话失败，请稍后再试。',
     }
 
     const EN = {
@@ -151,6 +156,11 @@ const NOTES_SOURCE = 'local-notes'
       'panel.cancel': 'Cancel',
       'panel.deletedNotice': 'The file was deleted.',
       'reference.section': 'Notes',
+      'panel.addToChat': 'New chat with this note',
+      'panel.addedToChat': 'New chat opened, note in its message box',
+      'panel.chatUnavailable': 'No workspace is open right now.',
+      'panel.chatBusy': 'The new message box is not ready yet. Try again.',
+      'panel.chatFailed': 'The new chat could not be created. Try again.',
     }
 
     const STYLE = `
@@ -1391,7 +1401,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       }
     }
 
-    function App({ api, t }) {
+    function App({ api, t, chat }) {
       const [projects, setProjects] = React.useState([])
       const [project, setProject] = React.useState(null)
       const [openDirs, setOpenDirs] = React.useState({})
@@ -2002,6 +2012,25 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         }
       }, [api, deleting, file, loadPath, project, refreshStatus, report])
 
+      /**
+       * Open a new chat carrying one row as its first reference.
+       *
+       * Every row offers this — a folder goes in as a folder chip and a file as
+       * a file chip — because either can be the subject of a conversation.
+       */
+      const addToChat = React.useCallback(
+        async (target, relative, name, isDirectory) => {
+          if (target === null) return
+          setNotice(null)
+          const outcome = await chat.open(noteReference(target.rootPath, relative, name, isDirectory))
+          if (outcome === 'ok') setNotice('panel.addedToChat')
+          else if (outcome === 'busy') setNotice('panel.chatBusy')
+          else if (outcome === 'failed') setNotice('panel.chatFailed')
+          else setNotice('panel.chatUnavailable')
+        },
+        [chat],
+      )
+
       const loadDiff = React.useCallback(
         async (target, relative) => {
           try {
@@ -2199,14 +2228,18 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
 
       /**
        * The Explorer row icons, drawn on a 16px grid. `newFile` and `newFolder`
-       * carry a small plus; `rename` is the pencil and `delete` the bin, so a
-       * file row offers the two actions that make sense on a file.
+       * carry a small plus; `rename` is the pencil, `delete` the bin, and
+       * `toSession` a speech bubble with a plus — the one action every row
+       * carries, because either a file or a whole folder can be handed to the
+       * chat.
        */
       const ICON_PATHS = {
         newFile: 'M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5zM9.5 1.5v3h3M8 8v4M6 10h4',
         newFolder: 'M1.8 3.4a.9.9 0 0 1 .9-.9h3l1.3 1.4h5.2a.9.9 0 0 1 .9.9v7.5a.9.9 0 0 1-.9.9H2.7a.9.9 0 0 1-.9-.9zM8 7.6v4M6 9.6h4',
         rename: 'M11.2 2.3 13.7 4.8 5.6 12.9 2.3 13.7 3.1 10.4zM9.7 3.8l2.5 2.5',
         delete: 'M2.8 4.3h10.4M6.3 4.3V2.9a.6.6 0 0 1 .6-.6h2.2a.6.6 0 0 1 .6.6v1.4M4.3 4.3l.7 8.4a.9.9 0 0 0 .9.8h4.2a.9.9 0 0 0 .9-.8l.7-8.4M6.6 6.9v3.9M9.4 6.9v3.9',
+        toSession:
+          'M3.1 2.6h9.8a1.1 1.1 0 0 1 1.1 1.1v6.1a1.1 1.1 0 0 1-1.1 1.1H5.4l-2.3 2.4V10.9a1.1 1.1 0 0 1-1.1-1.1V3.7a1.1 1.1 0 0 1 1.1-1.1zM8 4.6v3.2M6.4 6.2h3.2',
       }
 
       /** A compact square icon button, the way the Explorer header carries its actions. */
@@ -2234,8 +2267,21 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           ),
         )
 
+      /**
+       * Hand this row to the chat.
+       *
+       * It sits beside the create/rename/delete groups rather than inside them
+       * because every row carries it — a folder goes in as a folder chip and a
+       * file as a file chip — so it is the one action that is always present.
+       */
+      const chatAction = (target, relative, name, isDirectory) =>
+        iconButton('toSession', t('panel.addToChat'), (event) => {
+          event.stopPropagation()
+          addToChat(target, relative, name, isDirectory)
+        })
+
       /** The two create actions, shown inline on a folder row the way the Explorer does. */
-      const rowActions = (relative) =>
+      const rowActions = (relative, target, name) =>
         h(
           'span',
           { className: 'lmn-row-actions' },
@@ -2247,10 +2293,11 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             event.stopPropagation()
             beginCreate('directory', relative)
           }),
+          chatAction(target, relative, name, true),
         )
 
-      /** Rename and delete, shown inline on a file row. */
-      const fileActions = (relative) =>
+      /** Rename, delete and hand-to-chat, shown inline on a file row. */
+      const fileActions = (relative, target, name) =>
         h(
           'span',
           { className: 'lmn-row-actions' },
@@ -2262,6 +2309,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             event.stopPropagation()
             beginDelete(relative)
           }),
+          chatAction(target, relative, name, false),
         )
 
       /** Children of one directory, rendered one indent step deeper. */
@@ -2418,7 +2466,9 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           chevron(isDirectory, open),
           isDirectory ? folderGlyph(open) : fileGlyph(entry.name),
           h('span', { className: 'lmn-name' }, entry.name),
-          isDirectory ? rowActions(relative) : fileActions(relative),
+          isDirectory
+            ? rowActions(relative, target, entry.name)
+            : fileActions(relative, target, entry.name),
         )
         // The inline boxes sit under their own row, at the same indentation.
         const renamingThis = !isDirectory && renaming !== null && renaming.path === relative
@@ -2466,7 +2516,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
           chevron(true, open),
           folderGlyph(open),
           h('span', { className: 'lmn-name lmn-name-root' }, item.name.toUpperCase()),
-          active ? rowActions('') : null,
+          active ? rowActions('', item, item.name) : null,
           h(
             'button',
             {
@@ -2885,6 +2935,21 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
             notice === 'panel.restoreMissing'
               ? h('span', { className: 'lmn-note' }, t('panel.restoreMissing'))
               : null,
+            // The four outcomes of opening a chat from a note. They sit in the
+            // toolbar because that strip is already the panel's status line and
+            // it stays visible whether or not a file is open.
+            notice === 'panel.addedToChat'
+              ? h('span', { className: 'lmn-note' }, t('panel.addedToChat'))
+              : null,
+            notice === 'panel.chatBusy'
+              ? h('span', { className: 'lmn-note' }, t('panel.chatBusy'))
+              : null,
+            notice === 'panel.chatFailed'
+              ? h('span', { className: 'lmn-note' }, t('panel.chatFailed'))
+              : null,
+            notice === 'panel.chatUnavailable'
+              ? h('span', { className: 'lmn-note' }, t('panel.chatUnavailable'))
+              : null,
             dirty ? h('span', { className: 'lmn-note' }, t('panel.modifiedDirty')) : null,
             h(
               'button',
@@ -2944,13 +3009,109 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
       )
     }
 
-    /** Absolute note path in the form the composer's mention parser accepts. */
-    function noteMention(rootPath, relativePath) {
-      const absolute = `${rootPath.replace(/[\\/]+$/u, '')}/${relativePath}`.replace(/\\/gu, '/')
+    /**
+     * Absolute note path in the form the composer's mention parser accepts.
+     *
+     * A folder mention has to end in a slash to stay a folder, and the project
+     * root has no relative part at all, so both are handled here rather than at
+     * every call site.
+     */
+    function noteMention(rootPath, relativePath, isDirectory = false) {
+      const root = String(rootPath ?? '').replace(/[\\/]+$/u, '')
+      const rest = String(relativePath ?? '').replace(/[\\/]+$/u, '')
+      const joined = rest === '' ? root : `${root}/${rest}`
+      const absolute = (isDirectory ? `${joined}/` : joined).replace(/\\/gu, '/')
       // A mention ends at whitespace, so a path holding any must be quoted. The
-      // closing quote is included because a note is a leaf: directory mentions
-      // deliberately leave it out to keep drilling.
-      return /\s/u.test(absolute) ? `@"${absolute}"` : `@${absolute}`
+      // closing quote is included for a file because it is a leaf; a folder
+      // deliberately leaves it out so the composer keeps drilling into it.
+      if (!/\s/u.test(absolute)) return `@${absolute}`
+      return isDirectory ? `@"${absolute}` : `@"${absolute}"`
+    }
+
+    /**
+     * The composer reference that turns one note row into a chip.
+     *
+     * The shape is the host's own: its file-drop handler builds the same
+     * object, and only `source: 'reference'` gives the chip the official
+     * rendering and its click-to-open behaviour.
+     */
+    function noteReference(rootPath, relativePath, label, isDirectory) {
+      const name = String(label ?? '')
+      return {
+        source: 'reference',
+        ref: noteMention(rootPath, relativePath, isDirectory),
+        label: isDirectory ? `${name}/` : name,
+        appearance: isDirectory ? 'folder' : 'file',
+        clipboardText: noteMention(rootPath, relativePath, isDirectory),
+      }
+    }
+
+    /**
+     * The workspace the session on screen belongs to.
+     *
+     * A new chat has to be created inside a workspace, and the only one the
+     * panel can be sure about is the one already holding the session the user
+     * is looking at. The lookup mirrors the host's own navigation policy.
+     */
+    function currentWorkspaceId(ctx) {
+      const sessionId = ctx.get('uiWorkspace')?.selection?.getSnapshot?.().sessionId
+      if (typeof sessionId !== 'string' || sessionId === '') return undefined
+      const items = ctx.get('workspaces')?.list?.getSnapshot?.().items
+      if (!Array.isArray(items)) return undefined
+      for (const item of items) {
+        if (Array.isArray(item?.sessionIds) && item.sessionIds.includes(sessionId)) {
+          return item.workspaceId
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * The bridge that opens a fresh chat carrying one note.
+     *
+     * The note is not dropped into whatever message box happens to be open:
+     * the user asked for a new conversation per click, so the chip has to
+     * arrive in a session that did not exist a moment ago. That takes three
+     * host calls in a fixed order — create the session, navigate to it (which
+     * is what retains its binding), then add the chip — because the composer
+     * refuses to build a shell for a session it has no binding for.
+     *
+     * Every failure is reported as a status string rather than thrown: a panel
+     * that mounted before any workspace was open must still render.
+     */
+    function buildChatBridge(ctx) {
+      return {
+        /** Returns `'ok'`, `'busy'`, `'unavailable'` or `'failed'`. */
+        async open(reference) {
+          const conversation = ctx.get('conversation')
+          const sessions = ctx.get('sessions')
+          const uiWorkspace = ctx.get('uiWorkspace')
+          if (conversation === undefined || sessions === undefined || uiWorkspace === undefined) {
+            return 'unavailable'
+          }
+          const workspaceId = currentWorkspaceId(ctx)
+          if (workspaceId === undefined) return 'unavailable'
+          let sessionId
+          try {
+            sessionId = await sessions.create({ workspaceId })
+          } catch {
+            return 'failed'
+          }
+          if (typeof sessionId !== 'string' || sessionId === '') return 'failed'
+          try {
+            // Navigating retains the session, and retaining is what gives it a
+            // binding; `shell()` below would throw without one.
+            uiWorkspace.openSession(sessionId)
+            // `shell()` builds the input shell on first use and restores the
+            // saved draft while doing it, so it must run before anything is
+            // added; adding first would be wiped by that restore.
+            const shell = conversation.input.shell(sessionId)
+            return shell.addFiles([reference], []) === true ? 'ok' : 'busy'
+          } catch {
+            return 'failed'
+          }
+        },
+      }
     }
 
     /**
@@ -3093,6 +3254,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
         )
 
         const api = createApi(ctx)
+        const chat = buildChatBridge(ctx)
 
         // The `@` menu is an optional host capability: a scoped injection waits
         // for the service without making it a hard dependency of the whole
@@ -3132,7 +3294,7 @@ body:not([data-ds-light-theme]) .lmn-tok-constant{color:#4FC1FF}
                   name: 'main',
                   key: PANEL_ID,
                   locale: NS,
-                  inject: () => ({ api, t }),
+                  inject: () => ({ api, t, chat }),
                 },
                 App,
               ),

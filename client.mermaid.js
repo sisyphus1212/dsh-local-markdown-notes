@@ -3636,8 +3636,8 @@ cytoscape/dist/cytoscape.esm.mjs:
   (*! Bezier curve function generator. Copyright Gaetan Renaudeau. MIT License: http://en.wikipedia.org/wiki/MIT_License *)
   (*! Runge-Kutta spring physics function generator. Adapted from Framer.js, copyright Koen Bok. MIT License: http://en.wikipedia.org/wiki/MIT_License *)
 */
-globalThis["mermaid"] = globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;
+var __lmnMermaid = __esbuild_esm_mermaid_nm["mermaid"]; var __lmnResolved = (__lmnMermaid && __lmnMermaid.default) ? __lmnMermaid.default : __lmnMermaid;
 
-    return globalThis.mermaid
+    return __lmnResolved
   },
 })

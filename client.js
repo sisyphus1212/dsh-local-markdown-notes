@@ -773,6 +773,15 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     const MATH_CHUNK = './client.katex.js'
     const MERMAID_CHUNK = './client.mermaid.js'
 
+    /**
+     * How long an export waits for formulas and diagrams to finish rendering.
+     *
+     * It is the ceiling, not a delay: a note with neither waits zero because the
+     * first check already passes. It is generous because the chunks are fetched
+     * on first use, and a cold load of either one is the slow path this covers.
+     */
+    const EXPORT_SETTLE_MS = 8000
+
     /** Load one package-local client chunk, or resolve null when unavailable. */
     function loadClientChunk(spec) {
       if (typeof require !== 'function' || typeof require.async !== 'function') {
@@ -4496,7 +4505,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         const previous = viewMode
         if (previous !== 'preview') setViewMode('preview')
         setNotice('panel.exporting')
-        const node = await settledPreview(previewRef, Date.now() + 1500)
+        const node = await settledPreview(previewRef, Date.now() + EXPORT_SETTLE_MS)
         if (previous !== 'preview') setViewMode(previous)
         if (node === null || node === undefined) {
           setNotice('panel.exportFailed')
@@ -5050,11 +5059,26 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       }
     }
 
-    /** Wait for the preview to exist and for its formulas to be typeset. */
+    /**
+     * Wait for the preview to exist and for its formulas and diagrams to settle.
+     *
+     * The export clones this node, so it has to run after the lazily loaded
+     * chunks have replaced their source blocks: a clone taken while a formula or
+     * a diagram still renders as source carries that source into the file. Both
+     * fallbacks are checked because either chunk may still be on its way, and the
+     * wait ends at the deadline so a chunk that never loads cannot hang the click.
+     */
     async function settledPreview(ref, deadline) {
       while (Date.now() < deadline) {
         const node = ref === null || ref === undefined ? null : ref.current
-        if (node !== null && node !== undefined && node.querySelectorAll('.lmn-md-math-raw').length === 0) return node
+        if (
+          node !== null &&
+          node !== undefined &&
+          node.querySelectorAll('.lmn-md-math-raw').length === 0 &&
+          node.querySelectorAll('.lmn-md-diagram-source').length === 0
+        ) {
+          return node
+        }
         await new Promise(function (resolve) { setTimeout(resolve, 50) })
       }
       return ref === null || ref === undefined ? null : (ref.current || null)

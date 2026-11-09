@@ -827,6 +827,16 @@ function treeNamespace(options = {}) {
       }
       return { ok: true, value: { path: relativePath, version: 'v1', content: 'one\ntwo\nthree\n' } }
     },
+    async readAsset(projectId, relativePath) {
+      calls.push(['readAsset', projectId, relativePath])
+      if ((options.unreadable ?? []).includes(relativePath)) {
+        throw Object.assign(new Error(`no such asset ${relativePath}`), { code: 'notes/enoent' })
+      }
+      return {
+        ok: true,
+        value: { path: relativePath, mime: 'image/png', base64: 'iVBORw0KGgo=', size: 8 },
+      }
+    },
     async writeFile(projectId, relativePath, content, expectedVersion) {
       calls.push(['writeFile', projectId, relativePath, content, expectedVersion])
       // A test can hold the write open to type while it is still on the wire.
@@ -982,6 +992,42 @@ test('the explorer renders one tree: the project row is the root node', async ()
     !calls.some((call) => call[0] === 'listEntries' && call[2] !== ''),
     'no other directory is fetched just by expanding the root',
   )
+})
+
+test('an assets folder lists its pictures and opens one as a picture', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: {
+      '': [{ path: 'assets', name: 'assets', type: 'directory' }],
+      assets: [
+        { path: 'assets/test-shot.png', name: 'test-shot.png', type: 'asset', mime: 'image/png' },
+        { path: 'assets/note.md', name: 'note.md', type: 'file' },
+      ],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+
+  // The folder is not rendered as empty: it holds one picture and one note.
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  const folderItem = findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('assets'))
+  await click(panel.runtime, folderItem)
+
+  const tree = panel.runtime.tree()
+  assert.ok(textsOf(findOne(tree, 'lmn-side')).includes('test-shot.png'), 'the picture row renders')
+  assert.equal(findAll(tree, 'lmn-name-asset').length, 1, 'the picture carries its own row style')
+  assert.ok(!textsOf(findOne(tree, 'lmn-side')).includes('这个文件夹是空的'), 'the folder is not announced as empty')
+
+  const assetRow = findAll(tree, 'lmn-row').find((item) => textsOf(item).includes('test-shot.png'))
+  assert.equal(findAll(assetRow, 'lmn-iconbtn').length, 0, 'a picture offers no rename or delete actions')
+  await click(panel.runtime, assetRow)
+
+  assert.ok(
+    calls.some((call) => call[0] === 'readAsset' && call[2] === 'assets/test-shot.png'),
+    'opening a picture reads its bytes',
+  )
+  const image = findOne(panel.runtime.tree(), 'lmn-asset-img')
+  assert.ok(image, 'the picture renders')
+  assert.equal(image.props.src, 'data:image/png;base64,iVBORw0KGgo=', 'the bytes are inlined as a data URI')
+  assert.equal(image.props.alt, 'assets/test-shot.png', 'the path is the alt text')
 })
 
 test('a folder loads its children lazily and caches them across collapse', async () => {
@@ -1644,6 +1690,39 @@ test('opening the field on a folder that was never listed loads its children', a
   )
   assert.ok(texts.includes('deep.md'), 'the fetched child renders under the folder')
   assert.equal(findAll(panel.runtime.tree(), 'lmn-create').length, 1, 'the field is still open')
+})
+
+test('a file the editor cannot open is still listed and explains itself', async () => {
+  const { namespace, calls } = treeNamespace({
+    entriesByPath: {
+      '': [{ path: 'logs', name: 'logs', type: 'directory' }],
+      logs: [{ path: 'logs/dump.bin', name: 'dump.bin', type: 'other', size: 12 }],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  const folderRow = findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('logs'))
+  assert.ok(folderRow, 'the folder row exists under the project')
+  await click(panel.runtime, folderRow)
+  await panel.runtime.flush()
+
+  const side = findOne(panel.runtime.tree(), 'lmn-side')
+  const fileRow = findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('dump.bin'))
+  assert.ok(fileRow, 'nothing is hidden from the tree')
+  assert.ok(findAll(fileRow, 'lmn-name-other').length === 1, 'the row is marked as an entry it cannot open')
+
+  await click(panel.runtime, fileRow)
+  await panel.runtime.flush()
+
+  assert.equal(
+    calls.some((call) => call[0] === 'readFile' || call[0] === 'readAsset'),
+    false,
+    'clicking it must not try to read it as a note or a picture',
+  )
+  assert.ok(
+    textsOf(panel.runtime.tree()).includes(`${NS}:panel.openUnsupported`),
+    `the panel says why nothing opened: ${textsOf(panel.runtime.tree())}`,
+  )
 })
 
 test('creating inside a folder prefixes the selected folder and a directory keeps its name', async () => {
@@ -3860,4 +3939,76 @@ test('an unreadable picture keeps its address instead of vanishing', async () =>
   )
 
   assert.equal(attributes.src, 'img/missing.png', 'a link that may break beats a lost picture')
+})
+
+test('the preview shows a picture beside the note and reads it only once', async () => {
+  const { plugin } = loadClient()
+  const attributes = { src: 'assets/shot.png' }
+  const asked = []
+  const cache = new Map()
+  const root = {
+    querySelectorAll: () => [
+      {
+        getAttribute: (name) => attributes[name] ?? null,
+        setAttribute: (name, value) => {
+          attributes[name] = value
+        },
+      },
+    ],
+  }
+  const options = {
+    dir: 'notes/pcie',
+    projectId: 'p1',
+    cache,
+    read: async (relative) => {
+      asked.push(relative)
+      return { mime: 'image/png', base64: 'QUJD' }
+    },
+  }
+
+  await plugin.__test.inlinePreviewPictures(root, options)
+  assert.deepEqual(asked, ['notes/pcie/assets/shot.png'], 'the path is resolved beside the note')
+  assert.equal(attributes.src, 'data:image/png;base64,QUJD', 'the preview carries the bytes')
+  assert.equal(cache.get('p1:notes/pcie/assets/shot.png'), 'data:image/png;base64,QUJD')
+
+  attributes.src = 'assets/shot.png'
+  await plugin.__test.inlinePreviewPictures(root, options)
+  assert.equal(asked.length, 1, 'a picture already read is not read again on every keystroke')
+  assert.equal(attributes.src, 'data:image/png;base64,QUJD', 'the remembered bytes are put back')
+})
+
+test('the preview leaves pictures it cannot or need not read alone', async () => {
+  const { plugin } = loadClient()
+  const sources = ['https://example.com/a.png', '//cdn.example.com/b.png', 'data:image/png;base64,AA', '']
+  const nodes = sources.map((src) => {
+    const attributes = { src }
+    return {
+      getAttribute: (name) => attributes[name] ?? null,
+      setAttribute: (name, value) => {
+        attributes[name] = value
+      },
+      read: () => attributes.src,
+    }
+  })
+  const asked = []
+
+  await plugin.__test.inlinePreviewPictures(
+    { querySelectorAll: () => nodes },
+    {
+      dir: '',
+      projectId: 'p1',
+      cache: new Map(),
+      read: async (relative) => {
+        asked.push(relative)
+        return { mime: 'image/png', base64: 'QUJD' }
+      },
+    },
+  )
+
+  assert.deepEqual(asked, [], 'nothing is asked of the Host for a picture the page can resolve itself')
+  assert.deepEqual(
+    nodes.map((node) => node.read()),
+    sources,
+    'every address the Markdown wrote is left as it was',
+  )
 })

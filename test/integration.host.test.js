@@ -137,7 +137,7 @@ describe('host integration: real filesystem', { skip: !hasGit && 'git is unavail
     }
   })
 
-  test('listEntries lists directories first and hides non-Markdown and dot entries', async () => {
+  test('listEntries lists directories first and keeps every file but dot entries', async () => {
     const host = await createHostContext()
     const dir = tempProject('list')
     try {
@@ -156,11 +156,11 @@ describe('host integration: real filesystem', { skip: !hasGit && 'git is unavail
 
       assert.deepEqual(
         listing.entries.map((entry) => entry.path),
-        ['sub', 'alpha.md', 'beta.markdown', 'zeta.md'],
+        ['sub', 'alpha.md', 'beta.markdown', 'zeta.md', 'notes.txt'],
       )
       assert.deepEqual(
         listing.entries.map((entry) => entry.type),
-        ['directory', 'file', 'file', 'file'],
+        ['directory', 'file', 'file', 'file', 'other'],
       )
     } finally {
       await host.dispose()

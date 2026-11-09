@@ -20,6 +20,8 @@ const NOTES_SOURCE = 'local-notes'
       'panel.projects': '文件夹',
       'panel.files': '文件',
       'panel.emptyDir': '这个文件夹是空的。',
+      'panel.openUnsupported': '这里只能打开 Markdown 和图片，其它文件请在文件管理器里打开。',
+      'panel.assetHint': '图片附件，供笔记引用；不可在此编辑。',
       'panel.save': '保存',
       'panel.saving': '保存中…',
       'panel.saved': '已保存',
@@ -105,6 +107,8 @@ const NOTES_SOURCE = 'local-notes'
       'panel.projects': 'Folders',
       'panel.files': 'Files',
       'panel.emptyDir': 'This folder is empty.',
+      'panel.openUnsupported': 'Only Markdown and pictures open here; use your file manager for anything else.',
+      'panel.assetHint': 'Picture attachment used by a note; it cannot be edited here.',
       'panel.save': 'Save',
       'panel.saving': 'Saving…',
       'panel.saved': 'Saved',
@@ -212,6 +216,8 @@ const NOTES_SOURCE = 'local-notes'
 .lmn-icon{flex:0 0 16px;width:16px;height:16px;display:grid;place-items:center;color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-name{flex:1;min-width:0;font-size:13px;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-name-root{font-size:11px;font-weight:600;letter-spacing:.05em}
+.lmn-name-asset{color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-name-other{color:var(--dsw-alias-label-tertiary,#81858c)}
 .lmn-remove{flex:0 0 auto;opacity:0;transition:opacity .1s;padding:0 4px;line-height:16px;font:inherit;font-size:12px;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
 .lmn-row:hover .lmn-remove,.lmn-remove:focus-visible{opacity:1}
 .lmn-iconbtn{flex:0 0 auto;display:grid;place-items:center;width:22px;height:22px;padding:0;background:none;border:0;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer}
@@ -229,6 +235,9 @@ const NOTES_SOURCE = 'local-notes'
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.lmn-asset{flex:1;min-height:0;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.lmn-asset-img{max-width:100%;border-radius:6px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
+.lmn-asset-caption{max-width:46em}
 .lmn-doc{flex:1;min-height:0;width:100%;padding:0 20px;box-sizing:border-box;display:flex;flex-direction:column}
 .lmn-code-body{position:relative;flex:1;min-width:0;min-height:0;display:flex}
 /* Edit-time colour is painted by a mirrored layer underneath the textarea, so
@@ -3041,6 +3050,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       // The node the export copies: the very tree the reader is looking at, so
       // formulas and diagrams leave with it already typeset.
       const previewRef = React.useRef(null)
+      // A picture beside the note cannot be fetched by the page: a relative
+      // `src` would resolve against the Harness origin and 404. Read each one
+      // through the Host once, keyed by project path, and swap in its bytes —
+      // typing re-renders the preview but must not re-read what is on screen.
+      const inlineCache = React.useRef(new Map())
 
       /**
        * Auto-save follows VS Code's `files.autoSave: afterDelay`.
@@ -3272,6 +3286,65 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       )
 
       /**
+       * Open a picture as a picture.
+       *
+       * The browser cannot read a file next to the note, so the Host hands the
+       * bytes back as base64 and the pane shows them directly. The editor state
+       * (`draft`, marks, blame) is cleared the same way `openFile` clears it, so
+       * a picture never inherits the previous note's unsaved buffer.
+       */
+      const openAsset = React.useCallback(
+        async (target, relative) => {
+          try {
+            setBusy('read')
+            const value = await api.readAsset(target.id, relative)
+            setFile({
+              path: value.path,
+              asset: { mime: value.mime, base64: value.base64, size: value.size ?? 0 },
+            })
+            setDraft('')
+            draftVersion.current += 1
+            setBlame(null)
+            setLineEntry(null)
+            setBaseline(null)
+            setNotice(null)
+            setError(null)
+            setViewTarget(parentOf(value.path))
+            session.projectId = target.id
+            session.filePath = value.path
+            session.draft = ''
+            session.dirty = false
+            writeStoredSession()
+            return true
+          } catch (caught) {
+            report(caught)
+            return false
+          } finally {
+            setBusy(null)
+          }
+        },
+        [api, report],
+      )
+
+      /**
+       * Put the bytes of a picture beside the note into the preview.
+       *
+       * The rendered `<img>` keeps the address the Markdown wrote, which the
+       * page can only resolve for the web; a path next to the note would be
+       * asked of the Harness origin and fail. Each one is read through the Host
+       * once and cached by project path, because every keystroke re-renders.
+       */
+      React.useEffect(() => {
+        if (file === null || file.asset !== undefined || project === null) return
+        void inlinePreviewPictures(previewRef.current, {
+          dir: parentOf(file.path),
+          projectId: project.id,
+          cache: inlineCache.current,
+          read: (relative) => api.readAsset(project.id, relative),
+        })
+      }, [api, draft, file, project, viewMode])
+
+      /**
        * Write the buffer back to disk.
        *
        * `quiet` is the auto-save path (the debounce timer, leaving the editor
@@ -3284,6 +3357,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const save = React.useCallback(async (options = {}) => {
         const quiet = options.quiet === true
         if (project === null || file === null) return
+        // A picture has no text buffer; writing `draft` over it would replace
+        // the file with whatever the previous note left behind.
+        if (file.asset !== undefined) return
         if (savingRef.current) {
           // A write is already in flight and will settle the buffer when it
           // returns; this attempt is only here because typing went on. The
@@ -3403,7 +3479,16 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             setOpenDirs(sessionOpenDirs(session))
             for (const relative of directories) {
               if (cancelled) return
-              await loadPath(target, relative)
+              const entries = await loadPath(target, relative)
+              // A folder can disappear between two runs (renamed, deleted, or
+              // left over from a project that is gone). Restoring it is a
+              // convenience, so forget it quietly instead of banner-ing a path
+              // the user cannot do anything about.
+              if (entries === null) {
+                session.openDirs = session.openDirs.filter((entry) => entry !== relative)
+                setOpenDirs(sessionOpenDirs(session))
+                setError(null)
+              }
             }
           }
 
@@ -3937,6 +4022,35 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           ),
         )
 
+      /** A picture glyph, so an `assets/` entry is not mistaken for a note. */
+      const imageGlyph = () =>
+        h(
+          'span',
+          { className: 'lmn-icon', style: { color: '#a074c4' }, 'aria-hidden': 'true' },
+          h(
+            'svg',
+            { viewBox: '0 0 16 16', width: 16, height: 16 },
+            h('rect', {
+              x: 1.8,
+              y: 2.8,
+              width: 12.4,
+              height: 10.4,
+              rx: 1,
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.1,
+            }),
+            h('circle', { cx: 5.6, cy: 6.2, r: 1.1, fill: 'currentColor' }),
+            h('path', {
+              d: 'M2.6 11.6 6.2 8l2.4 2.3 2-1.7 2.8 3',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.1,
+              strokeLinejoin: 'round',
+            }),
+          ),
+        )
+
       const folderGlyph = (open) =>
         h(
           'span',
@@ -4172,6 +4286,8 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const treeNode = (target, entry, depth) => {
         const relative = entry.path
         const isDirectory = entry.type === 'directory'
+        const isAsset = entry.type === 'asset'
+        const isOther = entry.type === 'other'
         const open = isDirectory && openDirs[treeKey(target.id, relative)] === true
         const selected = !isDirectory && file !== null && file.path === relative
         // One hairline per enclosing level, so depth reads without counting gaps.
@@ -4187,7 +4303,13 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           )
         }
         const activate = () =>
-          isDirectory ? void toggleDir(target, relative) : void openFile(target, relative)
+          isDirectory
+            ? void toggleDir(target, relative)
+            : isAsset
+              ? void openAsset(target, relative)
+              : isOther
+                ? void setNotice('panel.openUnsupported')
+                : void openFile(target, relative)
         const row = h(
           'div',
           {
@@ -4201,11 +4323,23 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           },
           guides,
           chevron(isDirectory, open),
-          isDirectory ? folderGlyph(open) : fileGlyph(entry.name),
-          h('span', { className: 'lmn-name' }, entry.name),
+          isDirectory ? folderGlyph(open) : isAsset ? imageGlyph() : fileGlyph(entry.name),
+          h(
+            'span',
+            {
+              className: isAsset
+                ? 'lmn-name lmn-name-asset'
+                : isOther
+                  ? 'lmn-name lmn-name-other'
+                  : 'lmn-name',
+            },
+            entry.name,
+          ),
           isDirectory
             ? rowActions(relative, target, entry.name)
-            : fileActions(relative, target, entry.name),
+            : isAsset || isOther
+              ? null
+              : fileActions(relative, target, entry.name),
         )
         // The inline boxes sit under their own row, at the same indentation.
         const renamingThis = !isDirectory && renaming !== null && renaming.path === relative
@@ -4560,7 +4694,22 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                 h('p', null, project === null && projects.length === 0 ? t('panel.emptyHint') : ''),
               ),
             )
-          : h(
+          : file.asset !== undefined
+            ? h(
+                'div',
+                { className: 'lmn-editor' },
+                h(
+                  'div',
+                  { className: 'lmn-asset' },
+                  h('img', {
+                    className: 'lmn-asset-img',
+                    src: `data:${file.asset.mime};base64,${file.asset.base64}`,
+                    alt: file.path,
+                  }),
+                  h('div', { className: 'lmn-note lmn-asset-caption' }, t('panel.assetHint')),
+                ),
+              )
+            : h(
               'div',
               { className: 'lmn-editor' },
               h(
@@ -4730,7 +4879,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             'div',
             { className: 'lmn-toolbar' },
             h('span', { className: 'lmn-path' }, file === null ? (project?.rootPath ?? '') : file.path),
-            h(
+            // A picture has nothing to edit, save or export, so the whole
+            // Markdown toolbar stays out of its way.
+            file !== null && file.asset !== undefined
+              ? h('span', { className: 'lmn-note' }, t('panel.assetHint'))
+              : h(
               'div',
               { className: 'lmn-seg', role: 'group', 'aria-label': `${t('panel.edit')} / ${t('panel.preview')}` },
               h(
@@ -4764,6 +4917,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             notice === 'panel.saved' ? h('span', { className: 'lmn-note' }, t('panel.saved')) : null,
             notice === 'panel.exported' ? h('span', { className: 'lmn-note' }, t('panel.exported')) : null,
             notice === 'panel.exportFailed' ? h('span', { className: 'lmn-note' }, t('panel.exportFailed')) : null,
+            notice === 'panel.openUnsupported' ? h('span', { className: 'lmn-note' }, t('panel.openUnsupported')) : null,
             // Said quietly next to the reload button rather than as an error
             // banner: the session came back, only the file it named did not.
             notice === 'panel.restoreMissing'
@@ -4785,41 +4939,55 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
               ? h('span', { className: 'lmn-note' }, t('panel.chatUnavailable'))
               : null,
             dirty ? h('span', { className: 'lmn-dirty' }, t('panel.modifiedDirty')) : null,
-            h(
-              'button',
-              {
-                className: 'lmn-btn',
-                disabled: file === null || busy === 'read',
-                onClick: () => file !== null && project !== null && void openFile(project, file.path),
-              },
-              t('panel.reload'),
-            ),
-            h(
-              'button',
-              {
-                className: 'lmn-btn',
-                disabled: file === null || busy === 'read',
-                title: t('panel.exportHtml'),
-                onClick: () => void exportHtml(),
-              },
-              t('panel.exportHtml'),
-            ),
-            h(
-              'button',
-              {
-                className: 'lmn-btn lmn-btn-primary',
-                disabled: file === null || busy === 'save',
-                onClick: () => void save(),
-              },
-              busy === 'save' ? t('panel.saving') : t('panel.save'),
-            ),
+            // Reload, export and save all act on Markdown text, so none of
+            // them means anything while a picture is open.
+            file !== null && file.asset !== undefined
+              ? null
+              : h(
+                  'button',
+                  {
+                    className: 'lmn-btn',
+                    disabled: file === null || busy === 'read',
+                    onClick: () => file !== null && project !== null && void openFile(project, file.path),
+                  },
+                  t('panel.reload'),
+                ),
+            file !== null && file.asset !== undefined
+              ? null
+              : h(
+                  'button',
+                  {
+                    className: 'lmn-btn',
+                    disabled: file === null || busy === 'read',
+                    title: t('panel.exportHtml'),
+                    onClick: () => void exportHtml(),
+                  },
+                  t('panel.exportHtml'),
+                ),
+            file !== null && file.asset !== undefined
+              ? null
+              : h(
+                  'button',
+                  {
+                    className: 'lmn-btn lmn-btn-primary',
+                    disabled: file === null || busy === 'save',
+                    onClick: () => void save(),
+                  },
+                  busy === 'save' ? t('panel.saving') : t('panel.save'),
+                ),
           ),
           error === null
             ? null
             : h('div', { className: 'lmn-error' }, `${t('panel.error')} — ${error.code || ''} ${error.message}`),
           editor,
-          h('div', { className: 'lmn-splitter', ...splitterProps }),
-          h(
+          // Status, diff and blame all describe a note's text; a picture has
+          // none, so the pane would only show the note opened before it.
+          file !== null && file.asset !== undefined
+            ? null
+            : h('div', { className: 'lmn-splitter', ...splitterProps }),
+          file !== null && file.asset !== undefined
+            ? null
+            : h(
             'div',
             { className: 'lmn-bottom', ref: bottomRef, style: bottomStyle },
             h(
@@ -5049,6 +5217,50 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       }))
     }
 
+    /**
+     * Give the preview the bytes of every picture the note keeps beside it.
+     *
+     * The rendered `<img>` carries the address the Markdown wrote, which the
+     * page can only resolve for the web: asked of the Harness origin, a project
+     * path is a 404. Each one is read through the Host once and remembered by
+     * project path, because every keystroke re-renders the preview and must not
+     * re-read what is already on screen. A picture that fails to read keeps its
+     * address — exactly what the Markdown said — instead of taking the preview
+     * down or turning into a blank box.
+     */
+    async function inlinePreviewPictures(root, options) {
+      if (root === null || root === undefined || typeof root.querySelectorAll !== 'function') return
+      const settings = options || {}
+      const cache = settings.cache
+      const read = settings.read
+      if (typeof read !== 'function') return
+      for (const node of Array.from(root.querySelectorAll('img'))) {
+        const src = node.getAttribute('src') || ''
+        if (src === '' || src.startsWith('data:')) continue
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(src) || src.startsWith('//')) continue
+        const relative = assetPathFor(settings.dir, src)
+        if (relative === '') continue
+        const key = String(settings.projectId) + ':' + relative
+        const remembered = cache === undefined ? undefined : cache.get(key)
+        if (remembered !== undefined) {
+          node.setAttribute('src', remembered)
+          continue
+        }
+        let asset = null
+        try {
+          asset = await read(relative)
+        } catch (error) {
+          // Keep the address; a broken picture is what the note asked for.
+          continue
+        }
+        if (asset === null || asset === undefined) continue
+        if (typeof asset.base64 !== 'string' || asset.base64 === '') continue
+        const url = 'data:' + String(asset.mime || 'image/png') + ';base64,' + asset.base64
+        if (cache !== undefined) cache.set(key, url)
+        node.setAttribute('src', url)
+      }
+    }
+
     /** The stylesheet the maths chunk injects, so the export keeps type set. */
     function katexStyleText() {
       try {
@@ -5162,7 +5374,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         for (const entry of listing.entries ?? []) {
           if (notes.length >= MAX_NOTES || signal?.aborted === true) return
           if (entry.type === 'directory') await walk(project, entry.path, notes, signal)
-          else notes.push({ project, path: entry.path, name: entry.name })
+          // Pictures get listed in the tree so they can be opened, but a note
+          // can only be offered to the chat as text, so they stay out of here.
+          else if (entry.type === 'file') notes.push({ project, path: entry.path, name: entry.name })
         }
       }
 
@@ -5237,7 +5451,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     return {
       // Pure pieces the tests reach without a DOM; the panel itself only calls
       // them through `exportHtml` above.
-      __test: { buildStandaloneHtml, exportNameFor, escapeHtmlText, EXPORT_PAGE_CSS, inlineImages, assetPathFor },
+      __test: { buildStandaloneHtml, exportNameFor, escapeHtmlText, EXPORT_PAGE_CSS, inlineImages, inlinePreviewPictures, assetPathFor },
       inject: ['slots', 'locale', 'remote'],
       async apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'local-markdown-notes: dictionaries')

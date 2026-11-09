@@ -201,7 +201,7 @@ function fakeFs(initial, options = {}) {
   }
 }
 
-test('listEntries keeps Markdown files and drops other files', async () => {
+test('listEntries lists every entry, keeping dot files and vendored trees out', async () => {
   const fs = fakeFs({
     'C:/notes/a.md': '# a',
     'C:/notes/b.txt': 'b',
@@ -217,10 +217,33 @@ test('listEntries keeps Markdown files and drops other files', async () => {
       ['sub', 'directory'],
       ['a.md', 'file'],
       ['c.markdown', 'file'],
+      ['b.txt', 'other'],
     ],
   )
   assert.equal(listed.entries[1].path, 'a.md')
   assert.equal(listed.entries[0].path, 'sub')
+})
+
+test('listEntries lists pictures as assets and anything else as other', async () => {
+  const fs = fakeFs(
+    {
+      'C:/notes/assets/shot.png': 'png',
+      'C:/notes/assets/notes.md': '# n',
+      'C:/notes/assets/blob.bin': 'x',
+    },
+    { directories: ['C:/notes', 'C:/notes/assets'] },
+  )
+  const listed = await listEntries(fs, 'C:/notes', 'assets', undefined)
+  assert.deepEqual(
+    listed.entries.map((entry) => [entry.name, entry.type, entry.mime]),
+    [
+      ['notes.md', 'file', undefined],
+      ['shot.png', 'asset', 'image/png'],
+      ['blob.bin', 'other', undefined],
+    ],
+  )
+  assert.equal(listed.entries[1].path, 'assets/shot.png')
+  assert.equal(listed.skipped, undefined, 'nothing is dropped from the listing')
 })
 
 test('listEntries sorts directories first and files naturally', async () => {

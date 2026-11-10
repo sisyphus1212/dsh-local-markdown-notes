@@ -7,6 +7,8 @@ per-line blame) without ever touching the repository.
 
 The panel is local-first: files stay where they are on disk, nothing is copied, synced or uploaded.
 
+![The editor beside the folder tree, with the outline rail on the right](assets/editor.png)
+
 ## Features
 
 - **Folder panel** — import any number of local folders (a Git repo or a plain directory); a
@@ -28,6 +30,16 @@ The panel is local-first: files stay where they are on disk, nothing is copied, 
   jumping straight to the matching line.
 - **Agent tools** — the same content is available to the model through six tools:
   `notes_projects`, `notes_list`, `notes_read`, `notes_write`, `notes_append`, `notes_search`.
+
+## Screenshots
+
+| Preview, outline on the right | Search across every imported folder |
+| --- | --- |
+| ![Markdown preview with the heading outline](assets/preview.png) | ![Search hits grouped by file, with the matched text highlighted](assets/search.png) |
+
+| Outline rail for a long document | Maths and diagrams, typeset offline |
+| --- | --- |
+| ![The outline rail listing every heading](assets/outline.png) | ![A KaTeX formula and a Mermaid flowchart rendered in the preview](assets/maths-and-diagrams.png) |
 
 ## Install
 

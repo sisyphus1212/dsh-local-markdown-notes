@@ -3846,21 +3846,30 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
        * inline action was clicked, expanded first so the box is visible.
        */
       const beginCreate = React.useCallback(
-        (kind, target) => {
-          if (project === null) return
+        (kind, target, owner = null) => {
+          // A row carries its own project. More than one project tree stays on
+          // screen after a switch, so falling back to the active project would
+          // create inside the wrong root whenever the clicked row belongs to
+          // the other one.
+          const host = owner ?? project
+          if (host === null) return
           const directory = target ?? viewTarget
+          const active = project !== null && project.id === host.id
           setCreating({
             target: directory,
             kind,
+            owner: host,
             value: kind === 'file' ? `${t('panel.untitledName')}.md` : '',
           })
-          setViewTarget(directory)
-          setOpenDirs((current) => ({ ...current, [treeKey(project.id, directory)]: true }))
+          // Touching another project's tree must not move the view target: that
+          // would retarget the breadcrumb and the root row's own actions.
+          if (active) setViewTarget(directory)
+          setOpenDirs((current) => ({ ...current, [treeKey(host.id, directory)]: true }))
           setNotice(null)
           // Revealing a directory that was never listed would leave it stuck on
           // the loading placeholder, so pull its children in now.
-          if (children[treeKey(project.id, directory)] === undefined) {
-            void loadPath(project, directory)
+          if (children[treeKey(host.id, directory)] === undefined) {
+            void loadPath(host, directory)
           }
         },
         [children, loadPath, project, t, viewTarget],
@@ -3877,30 +3886,35 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
        * `.md` suffix gets one, because every entry this panel opens is Markdown.
        */
       const confirmCreate = React.useCallback(async () => {
-        if (creating === null || project === null) return
-        const { target, kind, value } = creating
+        if (creating === null) return
+        const { target, kind, value, owner } = creating
+        // The project that owns the row is the one to create in; `project` only
+        // covers a create started before any row carried an owner.
+        const host = owner ?? project
+        if (host === null) return
         const name = normalizeNewName(value, kind)
         if (name === '') {
           setCreating(null)
           return
         }
         const relative = joinRelative(target, name)
+        const active = project !== null && project.id === host.id
         try {
           setBusy('create')
-          const created = await api.createEntry(project.id, relative, kind)
+          const created = await api.createEntry(host.id, relative, kind)
           const createdPath = created?.path ?? relative
           setCreating(null)
           const directory = parentOf(createdPath)
-          setViewTarget(directory)
-          setOpenDirs((current) => ({ ...current, [treeKey(project.id, directory)]: true }))
-          await loadPath(project, directory)
+          if (active) setViewTarget(directory)
+          setOpenDirs((current) => ({ ...current, [treeKey(host.id, directory)]: true }))
+          await loadPath(host, directory)
           if (kind === 'file') {
-            await openFile(project, createdPath)
+            if (active) await openFile(host, createdPath)
           } else {
-            setOpenDirs((current) => ({ ...current, [treeKey(project.id, createdPath)]: true }))
-            await loadPath(project, createdPath)
+            setOpenDirs((current) => ({ ...current, [treeKey(host.id, createdPath)]: true }))
+            await loadPath(host, createdPath)
           }
-          await refreshStatus(project)
+          await refreshStatus(host)
           setError(null)
         } catch (caught) {
           report(caught)
@@ -3911,11 +3925,12 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 
       /** Open the inline name box on a file row, pre-filled with its current name. */
       const beginRename = React.useCallback(
-        (relative) => {
-          if (project === null) return
+        (relative, owner = null) => {
+          const host = owner ?? project
+          if (host === null) return
           const parent = parentOf(relative)
           const cut = relative.lastIndexOf('/')
-          setRenaming({ path: relative, parent, value: relative.slice(cut + 1) })
+          setRenaming({ path: relative, parent, owner: host, value: relative.slice(cut + 1) })
           setDeleting(null)
           setNotice(null)
         },
@@ -3934,8 +3949,10 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
        * is missing — the same normalisation a create goes through.
        */
       const confirmRename = React.useCallback(async () => {
-        if (renaming === null || project === null) return
-        const { path, parent, value } = renaming
+        if (renaming === null) return
+        const { path, parent, value, owner } = renaming
+        const host = owner ?? project
+        if (host === null) return
         const name = normalizeNewName(value, 'file')
         if (name === '') {
           setRenaming(null)
@@ -3946,17 +3963,18 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           setRenaming(null)
           return
         }
+        const active = project !== null && project.id === host.id
         try {
           setBusy('rename')
-          const renamed = await api.renameEntry(project.id, path, target)
+          const renamed = await api.renameEntry(host.id, path, target)
           const movedPath = renamed?.path ?? target
           setRenaming(null)
-          await loadPath(project, parent)
+          await loadPath(host, parent)
           // Keep following the file when the renamed one is the one on screen.
-          if (file !== null && file.path === path) {
-            await openFile(project, movedPath)
+          if (active && file !== null && file.path === path) {
+            await openFile(host, movedPath)
           }
-          await refreshStatus(project)
+          await refreshStatus(host)
           setError(null)
         } catch (caught) {
           report(caught)
@@ -3966,27 +3984,32 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       }, [api, file, loadPath, openFile, project, refreshStatus, renaming, report])
 
       /** Ask before deleting: a file row is one click away from losing a note. */
-      const beginDelete = React.useCallback((relative) => {
+      const beginDelete = React.useCallback((relative, owner = null) => {
+        const host = owner ?? project
+        if (host === null) return
         setRenaming(null)
-        setDeleting({ path: relative })
+        setDeleting({ path: relative, owner: host })
         setNotice(null)
-      }, [])
+      }, [project])
 
       const cancelDelete = React.useCallback(() => {
         setDeleting(null)
       }, [])
 
       const confirmDelete = React.useCallback(async () => {
-        if (deleting === null || project === null) return
-        const { path } = deleting
+        if (deleting === null) return
+        const { path, owner } = deleting
+        const host = owner ?? project
+        if (host === null) return
+        const active = project !== null && project.id === host.id
         try {
           setBusy('delete')
-          await api.deleteEntry(project.id, path)
+          await api.deleteEntry(host.id, path)
           setDeleting(null)
           const parent = parentOf(path)
-          await loadPath(project, parent)
+          await loadPath(host, parent)
           // The open file is gone: clear the editor instead of showing a ghost.
-          if (file !== null && file.path === path) {
+          if (active && file !== null && file.path === path) {
             setFile(null)
             setDraft('')
             setBlame(null)
@@ -3996,7 +4019,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             setNotice('panel.deletedNotice')
             clearSession()
           }
-          await refreshStatus(project)
+          await refreshStatus(host)
           setError(null)
         } catch (caught) {
           report(caught)
@@ -4407,11 +4430,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           { className: 'lmn-row-actions' },
           iconButton('newFile', t('panel.newFile'), (event) => {
             event.stopPropagation()
-            beginCreate('file', relative)
+            beginCreate('file', relative, target)
           }),
           iconButton('newFolder', t('panel.newFolder'), (event) => {
             event.stopPropagation()
-            beginCreate('directory', relative)
+            beginCreate('directory', relative, target)
           }),
           chatAction(target, relative, name, true),
         )
@@ -4423,11 +4446,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           { className: 'lmn-row-actions' },
           iconButton('rename', t('panel.rename'), (event) => {
             event.stopPropagation()
-            beginRename(relative)
+            beginRename(relative, target)
           }),
           iconButton('delete', t('panel.delete'), (event) => {
             event.stopPropagation()
-            beginDelete(relative)
+            beginDelete(relative, target)
           }),
           chatAction(target, relative, name, false),
         )
@@ -4436,11 +4459,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const childNodes = (target, relative, depth) => {
         const key = treeKey(target.id, relative)
         const known = children[key]
+        // The box belongs to whichever project the row came from, not to the
+        // project that happens to be selected right now.
+        const owner = creating === null ? null : (creating.owner ?? project)
         const pending =
-          creating !== null &&
-          project !== null &&
-          project.id === target.id &&
-          creating.target === relative
+          creating !== null && owner !== null && owner.id === target.id && creating.target === relative
             ? [createRow(depth)]
             : []
         if (known === undefined) {
@@ -4611,8 +4634,22 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
               : fileActions(relative, target, entry.name),
         )
         // The inline boxes sit under their own row, at the same indentation.
-        const renamingThis = !isDirectory && renaming !== null && renaming.path === relative
-        const deletingThis = !isDirectory && deleting !== null && deleting.path === relative
+        // Two projects can hold the same relative path, so the owner has to
+        // match as well or the box would appear under the other project's row.
+        const renameOwner = renaming === null ? null : (renaming.owner ?? project)
+        const deleteOwner = deleting === null ? null : (deleting.owner ?? project)
+        const renamingThis =
+          !isDirectory &&
+          renaming !== null &&
+          renaming.path === relative &&
+          renameOwner !== null &&
+          renameOwner.id === target.id
+        const deletingThis =
+          !isDirectory &&
+          deleting !== null &&
+          deleting.path === relative &&
+          deleteOwner !== null &&
+          deleteOwner.id === target.id
         return h(
           'div',
           { key: relative, className: 'lmn-node' },

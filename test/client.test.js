@@ -807,16 +807,33 @@ const PROJECT = { id: 'p1', name: 'ovs学习', rootPath: 'D:\dpu 资料\ovs学�
  * of one folder and the Git panes without a Host.
  */
 function treeNamespace(options = {}) {
-  const { entriesByPath = {}, blameFails = false, blameEntries = [], diff, project = PROJECT } = options
+  const {
+    entriesByPath = {},
+    blameFails = false,
+    blameEntries = [],
+    diff,
+    project = PROJECT,
+    projects,
+  } = options
   const calls = []
+  // With more than one project a flat map would hand every project the same
+  // folders, so a key may name its project: 'p2:content'. As soon as one key is
+  // scoped the map is read as per-project and nothing falls back to the flat
+  // key, which is what lets one project miss a folder the other has.
+  const scoped = Object.keys(entriesByPath).some((key) => key.includes(':'))
+  const entriesFor = (projectId, relativePath) => {
+    const path = relativePath ?? ''
+    if (scoped) return entriesByPath[`${projectId}:${path}`]
+    return entriesByPath[path]
+  }
   const namespace = {
     async listProjects() {
       calls.push(['listProjects'])
-      return { ok: true, value: { projects: [project] } }
+      return { ok: true, value: { projects: projects ?? [project] } }
     },
     async listEntries(projectId, relativePath) {
       calls.push(['listEntries', projectId, relativePath])
-      const entries = entriesByPath[relativePath ?? '']
+      const entries = entriesFor(projectId, relativePath)
       if (entries === undefined) throw Object.assign(new Error(`no such dir ${relativePath}`), { code: 'notes/enoent' })
       return { ok: true, value: { path: relativePath ?? '', entries } }
     },
@@ -858,7 +875,7 @@ function treeNamespace(options = {}) {
       }
       // Creating a real entry makes the parent list one item longer.
       const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''
-      const bucket = entriesByPath[parent]
+      const bucket = entriesFor(projectId, parent)
       if (bucket !== undefined && kind === 'file') {
         bucket.push({ path: relativePath, name: relativePath.slice(relativePath.lastIndexOf('/') + 1), type: 'file' })
       }
@@ -1605,6 +1622,66 @@ test('confirming a new file at the root calls createEntry with a .md path', asyn
     `createEntry receives the markdown path: ${JSON.stringify(calls)}`,
   )
   assert.equal(findAll(panel.runtime.tree(), 'lmn-create').length, 0, 'the field closes after creating')
+})
+
+test('a row of another project creates in that project, not in the selected one', async () => {
+  // Two projects, one open at a time but both expanded: the panel deliberately
+  // keeps the folders of an earlier project open, so its rows stay clickable
+  // while another project is selected. A create action there must land in the
+  // project the row belongs to — using the selected project fails outright when
+  // that project has no folder of that name, which is the reported bug.
+  const other = { id: 'p2', name: 'blog-content', rootPath: '\\wsl.localhost\Debian\root\work\blog-content' }
+  const { namespace, calls } = treeNamespace({
+    projects: [PROJECT, other],
+    entriesByPath: {
+      'p1:': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }],
+      'p2:': [{ path: 'content', name: 'content', type: 'directory' }],
+      'p2:content': [{ path: 'content/post.md', name: 'post.md', type: 'file' }],
+    },
+  })
+  const panel = await mountPanel({ namespace })
+
+  const rootRowFor = (name) =>
+    findAll(panel.runtime.tree(), 'lmn-row').find(
+      (item) => String(item.props.className).includes('lmn-row-root') && textsOf(item).includes(name),
+    )
+
+  // Open the blog project first, then select the other one on top of it.
+  await click(panel.runtime, rootRowFor('BLOG-CONTENT'))
+  await click(panel.runtime, rootRowFor('OVS学习'))
+  assert.equal(
+    findAll(panel.runtime.tree(), 'lmn-row').filter(
+      (item) => String(item.props.className).includes('lmn-row-root') && String(item.props.className).includes('is-selected'),
+    ).length,
+    1,
+    'exactly one project is selected',
+  )
+
+  await click(panel.runtime, rowActions(panel, 'content')[1])
+
+  assert.equal(findOne(panel.runtime.tree(), 'lmn-error'), undefined, 'the folder of the other project still exists over there')
+  const field = findOne(panel.runtime.tree(), 'lmn-create')
+  assert.ok(field, 'the inline field opens under the row that was clicked')
+
+  const input = seekType(field, 'input')
+  input.props.onChange({ target: { value: 'drafts' } })
+  await panel.runtime.flush()
+  await press(panel.runtime, seekType(findOne(panel.runtime.tree(), 'lmn-create'), 'input'), 'Enter')
+
+  assert.ok(
+    calls.some(
+      (call) =>
+        call[0] === 'createEntry' && call[1] === 'p2' && call[2] === 'content/drafts' && call[3] === 'directory',
+    ),
+    `createEntry receives the project the row belongs to: ${JSON.stringify(calls)}`,
+  )
+  const selected = findAll(panel.runtime.tree(), 'lmn-row').find(
+    (item) => String(item.props.className).includes('lmn-row-root') && String(item.props.className).includes('is-selected'),
+  )
+  assert.ok(
+    textsOf(selected).includes('OVS学习'),
+    'creating elsewhere leaves the selected project where it was',
+  )
 })
 
 test('a folder row action swallows the row click so the row does not toggle underneath it', async () => {

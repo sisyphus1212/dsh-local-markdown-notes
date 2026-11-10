@@ -60,11 +60,16 @@ const NOTES_SOURCE = 'local-notes'
       'panel.namePlaceholder': '文件夹名',
       'panel.fileNamePlaceholder': '文件名.md',
       'panel.previewEmpty': '这个文件还没有内容。',
-    'panel.outline': '目录',
+      'panel.outline': '目录',
+      'panel.hideSide': '收起文件列表',
+      'panel.showSide': '展开文件列表',
+      'panel.hideOutline': '收起目录',
+      'panel.showOutline': '展开目录',
       'panel.edit': '编辑',
       'panel.preview': '预览',
       'panel.untitledName': '未命名',
       'panel.resize': '拖动调整下方面板高度',
+      'panel.resizeSide': '拖动调整侧边栏宽度',
       'panel.restoreMissing': '上次打开的文件已经不在了，请从左侧重新选择。',
       'panel.searchPlaceholder': '搜索笔记',
       'panel.searchClear': '清除搜索',
@@ -75,6 +80,7 @@ const NOTES_SOURCE = 'local-notes'
       'panel.searchFiles': '个文件',
       'panel.searchScanned': '已扫描',
       'panel.searchTruncated': '结果不完整',
+      'panel.searchTimeout': '搜索超时了，请再试一次。',
       'panel.rename': '重命名',
       'panel.delete': '删除',
       'panel.renamePlaceholder': '新文件名',
@@ -147,11 +153,16 @@ const NOTES_SOURCE = 'local-notes'
       'panel.namePlaceholder': 'Folder name',
       'panel.fileNamePlaceholder': 'name.md',
       'panel.previewEmpty': 'This file is still empty.',
-    'panel.outline': 'Outline',
+      'panel.outline': 'Outline',
+      'panel.hideSide': 'Hide the file list',
+      'panel.showSide': 'Show the file list',
+      'panel.hideOutline': 'Hide the outline',
+      'panel.showOutline': 'Show the outline',
       'panel.edit': 'Edit',
       'panel.preview': 'Preview',
       'panel.untitledName': 'Untitled',
       'panel.resize': 'Drag to resize the bottom panel',
+      'panel.resizeSide': 'Drag to resize the side panel',
       'panel.restoreMissing': 'The file you had open is gone. Pick another one on the left.',
       'panel.searchPlaceholder': 'Search notes',
       'panel.searchClear': 'Clear search',
@@ -162,6 +173,7 @@ const NOTES_SOURCE = 'local-notes'
       'panel.searchFiles': 'files',
       'panel.searchScanned': 'scanned',
       'panel.searchTruncated': 'partial results',
+      'panel.searchTimeout': 'The search timed out. Try again.',
       'panel.rename': 'Rename',
       'panel.delete': 'Delete',
       'panel.renamePlaceholder': 'New file name',
@@ -180,6 +192,8 @@ const NOTES_SOURCE = 'local-notes'
     const STYLE = `
 .lmn-root{display:flex;height:100%;min-height:0;background:var(--dsw-alias-bg-base,Canvas);color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:18px}
 .lmn-side{width:260px;flex:0 0 260px;border-right:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));display:flex;flex-direction:column;min-height:0}
+.lmn-root.is-side-closed .lmn-side{display:none}
+.lmn-root.is-outline-closed .lmn-outline{display:none}
 .lmn-side-head{display:flex;align-items:center;gap:4px;padding:6px 6px 6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-side-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-search{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
@@ -196,13 +210,35 @@ const NOTES_SOURCE = 'local-notes'
 .lmn-hit-text{display:block;font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:pre}
 .lmn-hit-line{display:inline-block;min-width:18px;margin-right:5px;text-align:right;font-size:11px;color:var(--dsw-alias-label-secondary,#61666b)}
 .lmn-hit-mark{background:rgba(255,196,0,.38);color:var(--dsw-alias-label-primary,CanvasText);border-radius:2px}
-.lmn-btn{font:inherit;color:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-alias-bg-layer-2,transparent);padding:3px 8px}
-.lmn-btn:hover{background:var(--dsw-alias-bg-layer-3,rgba(0,0,0,.04))}
-.lmn-btn[disabled]{opacity:.5;cursor:default}
-.lmn-btn-primary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
+.lmn-hit-group{display:flex;flex-direction:column;padding:1px 0 3px}
+.lmn-hit-file{display:flex;align-items:center;gap:4px;width:100%;text-align:left;font:inherit;background:none;border:0;padding:3px 8px 3px 6px;cursor:pointer;color:var(--dsw-alias-label-secondary,#61666b);border-radius:3px}
+.lmn-hit-file:hover,.lmn-hit-file:focus-visible{background:rgba(127,127,127,.18);color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-hit-file-caret{flex:0 0 auto;opacity:.75}
+.lmn-hit-file-path{flex:1 1 auto;font-size:11.5px;line-height:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lmn-hit-file-count{flex:0 0 auto;min-width:16px;text-align:right;font-size:11px;line-height:15px;opacity:.75}
+.lmn-hit-group .lmn-hit{padding-left:21px}
+/* Buttons read as quiet text until the pointer arrives. A border on every one
+   of them made the strip look like a row of boxes; only the primary action
+   carries a fill, so the eye lands on save and nothing else competes. */
+.lmn-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:26px;padding:0 9px;font:inherit;font-size:12px;font-weight:500;line-height:1;color:var(--dsw-alias-label-secondary,#61666b);white-space:nowrap;cursor:pointer;border:1px solid transparent;border-radius:6px;background:transparent;transition:background .12s,color .12s,border-color .12s}
+.lmn-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14));color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#0f1115);outline-offset:1px}
+.lmn-btn[disabled]{opacity:.4;cursor:default;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-btn[disabled]:hover{background:transparent;color:var(--dsw-alias-label-secondary,#61666b)}
+.lmn-btn-primary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent;font-weight:600}
 .lmn-btn.lmn-btn-primary:hover{background:var(--dsw-alias-button-primary-hover,#43454a);color:var(--dsw-alias-label-primary-foreground,#fff)}
 .lmn-btn.lmn-btn-primary:focus-visible{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary,#0f1115));color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
-.lmn-btn-danger{color:var(--dsw-alias-state-error-primary,#ec1313);border-color:var(--dsw-alias-state-error-primary,#ec1313)}
+/* A disabled primary is not a faint copy of the filled one — it steps back to
+   plain text so an unavailable save never reads as the loudest thing present. */
+.lmn-btn.lmn-btn-primary[disabled]{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08));color:var(--dsw-alias-label-tertiary,#81858c);opacity:1;font-weight:500}
+.lmn-btn.lmn-btn-primary[disabled]:hover{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08));color:var(--dsw-alias-label-tertiary,#81858c)}
+.lmn-foldbtn{width:24px;padding:0;color:var(--dsw-alias-label-tertiary,#81858c)}
+.lmn-foldbtn:hover{color:var(--dsw-alias-label-primary,CanvasText)}
+/* An icon button is square: the caption it lost had its own padding, so the
+   width has to come from the box rather than from a word inside it. */
+.lmn-glyphbtn{width:26px;padding:0;color:var(--dsw-alias-label-tertiary,#81858c)}
+.lmn-glyphbtn:hover{color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-btn-danger{color:var(--dsw-alias-state-error-primary,#ec1313);border-color:transparent}
 .lmn-btn.lmn-btn-danger:hover{background:var(--dsw-alias-state-error-primary,#ec1313);color:var(--dsw-alias-label-primary-foreground,#fff)}
 .lmn-confirm{padding-top:3px;padding-bottom:3px}
 .lmn-confirm-text{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -233,7 +269,10 @@ const NOTES_SOURCE = 'local-notes'
 .lmn-row:hover .lmn-iconbtn[disabled]{opacity:.35}
 .lmn-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .lmn-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
-.lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.lmn-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-tertiary,#81858c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+/* The status line shares the toolbar with the controls, so it drops the block
+   padding it uses in the body and shrinks to a single quiet sentence. */
+.lmn-toolbar .lmn-note{padding:0;max-width:24em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dsw-alias-label-tertiary,#81858c)}
 .lmn-editor{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .lmn-asset{flex:1;min-height:0;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .lmn-asset-img{max-width:100%;border-radius:6px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
@@ -272,6 +311,9 @@ body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
    itself, so the splitter only has to be grabbable, not painted. */
 .lmn-splitter{flex:0 0 auto;height:6px;margin-bottom:-1px;cursor:row-resize;background:transparent;touch-action:none}
 .lmn-splitter:hover,.lmn-splitter[data-dragging="true"]{background:var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
+/* The same strip turned on its side, for the project rail. Height has to be
+   released: the row-shaped rule would otherwise pin it to 6px tall. */
+.lmn-splitter-v{flex:0 0 auto;width:6px;height:auto;margin:0 0 0 -1px;cursor:col-resize;background:transparent;touch-action:none}
 .lmn-bottom{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));max-height:44%;display:flex;flex-direction:column;min-height:0}
 .lmn-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}
 .lmn-tab{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;border-radius:6px;padding:3px 8px;cursor:pointer}
@@ -289,7 +331,10 @@ body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-empty-center h3{margin:0 0 6px;font-size:14px;color:var(--dsw-alias-label-primary,CanvasText)}
 .lmn-kv{display:flex;gap:6px}
 .lmn-kv b{font-weight:600}
-.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:10px 0 0 44px;min-width:0}
+/* The rail is 39px wide — 8px of padding plus the 3px change bar, its 6px
+   gap and the 22px numbers — and the rendered page starts at the same edge as
+   the source line, so switching modes never nudges the text sideways. */
+.lmn-blame-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:10px 0 0 39px;min-width:0}
 .lmn-blame-chip{position:relative;display:inline-flex;align-items:center;max-width:100%;min-width:0;padding:2px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;outline:none;cursor:default}
 .lmn-blame-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmn-blame-chip:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
@@ -300,11 +345,17 @@ body[data-ds-dark-theme] .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-create input{flex:1;min-width:0;font:inherit;font-size:12px;color:inherit;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:6px;padding:2px 6px;outline:none}
 .lmn-create input:focus{border-color:var(--dsw-alias-brand-primary,#0f1115)}
 .lmn-indent{position:absolute;top:0;bottom:0;width:1px;background:var(--dsw-alias-border-l1,rgba(0,0,0,.07));pointer-events:none}
-.lmn-seg{display:inline-flex;align-items:center;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:8px;overflow:hidden}
-.lmn-seg button{font:inherit;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;padding:3px 10px;cursor:pointer}
-.lmn-seg button[aria-pressed="true"]{color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-interactive-bg-active,rgba(0,0,0,.08))}
-.lmn-seg button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
-.lmn-render{flex:1;min-height:0;overflow:auto;padding:14px 0 24px 44px;color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:20px;word-break:break-word}
+/* A segmented control, not two buttons in a box: the modes share one sunken
+   track and the live one lifts out of it. */
+.lmn-seg{display:inline-flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08))}
+.lmn-seg button{font:inherit;font-size:12px;font-weight:500;line-height:1;color:var(--dsw-alias-label-secondary,#61666b);background:none;border:0;border-radius:6px;height:22px;padding:0 10px;cursor:pointer;transition:background .12s,color .12s}
+.lmn-seg button[aria-pressed="true"]{color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-bg-base,#fff);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.lmn-seg button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,CanvasText)}
+.lmn-seg button[aria-pressed="true"]:hover{background:var(--dsw-alias-bg-base,#fff)}
+/* The segment's buttons carry their own padding for a caption; an icon has
+   none to pad around, so it gets a square box inside the same track. */
+.lmn-seg .lmn-glyphbtn{width:24px;padding:0}
+.lmn-render{flex:1;min-height:0;overflow:auto;padding:14px 0 24px 39px;color:var(--dsw-alias-label-primary,CanvasText);font-size:13px;line-height:20px;word-break:break-word}
 .lmn-render>*:first-child{margin-top:0}
 .lmn-render h1,.lmn-render h2,.lmn-render h3,.lmn-render h4,.lmn-render h5,.lmn-render h6{margin:16px 0 8px;line-height:1.3;font-weight:600}
 .lmn-render h1{font-size:22px}
@@ -379,7 +430,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 .lmn-render table{margin:10px 0;border-collapse:collapse;font-size:12px}
 .lmn-render th,.lmn-render td{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding:4px 8px;text-align:left;vertical-align:top}
 .lmn-render th{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));font-weight:600}
- .lmn-preview{flex:1;min-height:0;display:flex;min-width:0}.lmn-outline{width:168px;flex:0 0 168px;min-height:0;overflow:auto;padding:14px 0 24px 12px;border-left:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06));font-size:12px;line-height:18px}.lmn-outline-item{display:block;padding:2px 6px;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lmn-outline-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,CanvasText)}.lmn-outline-item.is-level-2{padding-left:6px}.lmn-outline-item.is-level-3{padding-left:16px}.lmn-outline-item.is-level-4{padding-left:26px}.lmn-outline-item.is-level-5{padding-left:36px}.lmn-outline-item.is-level-6{padding-left:46px}.lmn-md-toc{margin:10px 0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.03));border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}.lmn-md-toc .lmn-outline-item{white-space:normal}.lmn-render-empty{padding:14px 0 14px 44px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
+ .lmn-preview{flex:1;min-height:0;display:flex;min-width:0}.lmn-outline{width:168px;flex:0 0 168px;min-height:0;overflow:auto;padding:14px 0 24px 12px;border-left:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06));font-size:12px;line-height:18px}.lmn-outline-item{display:block;padding:2px 6px;border-radius:4px;color:var(--dsw-alias-label-secondary,#61666b);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lmn-outline-item:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,CanvasText)}.lmn-outline-item.is-level-2{padding-left:6px}.lmn-outline-item.is-level-3{padding-left:16px}.lmn-outline-item.is-level-4{padding-left:26px}.lmn-outline-item.is-level-5{padding-left:36px}.lmn-outline-item.is-level-6{padding-left:46px}.lmn-md-toc{margin:10px 0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.03));border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05))}.lmn-md-toc .lmn-outline-item{white-space:normal}.lmn-render-empty{padding:14px 0 14px 39px;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px}
 `
 
     /**
@@ -2304,6 +2355,75 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     // doubled character would slide the painted glyphs out from under the
     // caret.
 
+    /**
+     * Wrap every occurrence of a search query in a highlight span.
+     *
+     * Works on children that are already painted: text is split, elements are
+     * rebuilt with their split children, and nothing else changes. The joined
+     * text of the result is always identical to the input, which is what lets
+     * this run inside the mirrored layer without moving a single glyph. An
+     * empty query returns the children untouched, so ordinary editing pays
+     * nothing for a feature only searches use.
+     */
+    function markRuns(children, query, keyPrefix) {
+      const needle = String(query ?? '').trim()
+      if (needle === '') return children
+      const lowered = needle.toLowerCase()
+      const out = []
+      let counter = 0
+
+      const split = (text) => {
+        const pieces = []
+        const haystack = text.toLowerCase()
+        let last = 0
+        let at = haystack.indexOf(lowered)
+        while (at !== -1) {
+          if (at > last) pieces.push(text.slice(last, at))
+          pieces.push(
+            h(
+              'span',
+              { key: `${keyPrefix}:m${counter}`, className: 'lmn-hit-mark' },
+              text.slice(at, at + needle.length),
+            ),
+          )
+          counter += 1
+          last = at + needle.length
+          at = haystack.indexOf(lowered, last)
+        }
+        if (pieces.length === 0) return null
+        if (last < text.length) pieces.push(text.slice(last))
+        return pieces
+      }
+
+      const walk = (value, into) => {
+        if (typeof value === 'string') {
+          const pieces = split(value)
+          if (pieces === null) into.push(value)
+          else for (const piece of pieces) into.push(piece)
+          return
+        }
+        if (Array.isArray(value)) {
+          for (const item of value) walk(item, into)
+          return
+        }
+        if (value === null || value === undefined || typeof value !== 'object') {
+          into.push(value)
+          return
+        }
+        const kids = value.children
+        if (!Array.isArray(kids) || kids.length === 0) {
+          into.push(value)
+          return
+        }
+        const inner = []
+        for (const item of kids) walk(item, inner)
+        into.push(h(value.type, value.props, ...inner))
+      }
+
+      walk(children, out)
+      return out
+    }
+
     /** Highlight the inline spans of one Markdown line, keeping every marker. */
     function colorizeInline(text, keyPrefix) {
       const out = []
@@ -2431,19 +2551,22 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
      * Paint a whole draft as one element per source line.
      *
      * Fences switch the scanner into the fenced language, so a fenced block is
-     * coloured exactly like the preview renders it.
+     * coloured exactly like the preview renders it. A search query, when given,
+     * is marked inside every painted line.
      */
-    function highlightMarkdown(source) {
+    function highlightMarkdown(source, query = '') {
       const text = String(source ?? '')
       const lines = text.split('\n')
       if (text.length > HL_EDIT_LIMIT) {
         return lines.map((line, index) =>
-          h('div', { key: index, className: 'lmn-hl-line' }, line),
+          h('div', { key: index, className: 'lmn-hl-line' }, ...markRuns(line, query, `l${index}`)),
         )
       }
 
       const out = []
       const commandNote = looksLikeCommandNote(lines)
+      const paint = (key, children) =>
+        out.push(h('div', { key, className: 'lmn-hl-line' }, ...markRuns(children, query, `l${key}`)))
 
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]
@@ -2455,22 +2578,16 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           // block comments and multi-line strings stay intact across lines.
           const marker = opened[1]
           const language = String(opened[2] ?? '').trim().toLowerCase()
-          out.push(h('div', { key, className: 'lmn-hl-line' }, h('span', { className: 'lmn-tok-comment' }, line)))
+          paint(key, [h('span', { className: 'lmn-tok-comment' }, line)])
           let end = index + 1
           while (end < lines.length && lines[end].trim() !== marker) end += 1
           const body = lines.slice(index + 1, end)
           const painted = paintCodeLines(body, language)
           for (let offset = 0; offset < body.length; offset += 1) {
-            out.push(h('div', { key: index + 1 + offset, className: 'lmn-hl-line' }, painted[offset]))
+            paint(index + 1 + offset, [painted[offset]])
           }
           if (end < lines.length) {
-            out.push(
-              h(
-                'div',
-                { key: end, className: 'lmn-hl-line' },
-                h('span', { className: 'lmn-tok-comment' }, lines[end]),
-              ),
-            )
+            paint(end, [h('span', { className: 'lmn-tok-comment' }, lines[end])])
           }
           index = end
           continue
@@ -2478,56 +2595,44 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 
         const heading = MD_EDIT_HEADING.exec(line)
         if (heading !== null) {
-          out.push(
+          paint(key, [
+            h('span', { className: 'lmn-tok-comment' }, `${heading[1]}${heading[2]}`),
             h(
-              'div',
-              { key, className: 'lmn-hl-line' },
-              h('span', { className: 'lmn-tok-comment' }, `${heading[1]}${heading[2]}`),
-              h(
-                'span',
-                { className: 'lmn-md-heading' },
-                heading[3],
-                colorizeInline(heading[4], `h${index}`),
-              ),
+              'span',
+              { className: 'lmn-md-heading' },
+              heading[3],
+              colorizeInline(heading[4], `h${index}`),
             ),
-          )
+          ])
           continue
         }
 
         const quote = MD_EDIT_QUOTE.exec(line)
         if (quote !== null) {
-          out.push(
-            h(
-              'div',
-              { key, className: 'lmn-hl-line' },
-              h('span', { className: 'lmn-tok-comment' }, `${quote[1]}${quote[2]}${quote[3]}`),
-              h('span', { className: 'lmn-md-quote' }, quote[4]),
-            ),
-          )
+          paint(key, [
+            h('span', { className: 'lmn-tok-comment' }, `${quote[1]}${quote[2]}${quote[3]}`),
+            h('span', { className: 'lmn-md-quote' }, quote[4]),
+          ])
           continue
         }
 
         const bullet = MD_EDIT_BULLET.exec(line)
         if (bullet !== null) {
-          out.push(
-            h(
-              'div',
-              { key, className: 'lmn-hl-line' },
-              bullet[1],
-              h('span', { className: 'lmn-tok-keyword' }, bullet[2]),
-              bullet[3],
-              colorizeInline(bullet[4], `b${index}`),
-            ),
-          )
+          paint(key, [
+            bullet[1],
+            h('span', { className: 'lmn-tok-keyword' }, bullet[2]),
+            bullet[3],
+            colorizeInline(bullet[4], `b${index}`),
+          ])
           continue
         }
 
         if (commandNote && line.trim() !== '') {
-          out.push(h('div', { key, className: 'lmn-hl-line' }, paintCommandLine(line, `c${index}`)))
+          paint(key, paintCommandLine(line, `c${index}`))
           continue
         }
 
-        out.push(h('div', { key, className: 'lmn-hl-line' }, colorizeInline(line, `t${index}`)))
+        paint(key, colorizeInline(line, `t${index}`))
       }
 
       return out
@@ -2548,7 +2653,8 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     function outlineOf(flow) {
       const headings = []
       let fence = null
-      for (const line of flow) {
+      for (let index = 0; index < flow.length; index += 1) {
+        const line = flow[index]
         const open = MD_FENCE.exec(line)
         if (open !== null) {
           if (fence === null) fence = open[1]
@@ -2560,6 +2666,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         if (heading === null) continue
         headings.push({
           id: `lmn-h-${headings.length}`,
+          // The 1-based line of the heading in the array that was scanned. The
+          // rail is built from the buffer, so this points at the source line the
+          // editor has to scroll to — the preview does not need it, an anchor
+          // exists there.
+          line: index + 1,
           level: heading[1].length,
           text: heading[2].trim(),
         })
@@ -2582,14 +2693,15 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
     }
 
     /** One clickable entry of an outline, indented by heading level. */
-    function outlineEntry(entry, keyPrefix) {
+    function outlineEntry(entry, keyPrefix, onJump) {
       return h('a', {
         key: `${keyPrefix}-${entry.id}`,
         className: `lmn-outline-item is-level-${entry.level}`,
         href: `#${entry.id}`,
         onClick: (event) => {
           event?.preventDefault?.()
-          jumpToHeading(entry.id)
+          if (typeof onJump === 'function') onJump(entry)
+          else jumpToHeading(entry.id)
         },
       }, entry.text)
     }
@@ -2913,6 +3025,14 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       viewMode: 'edit',
       bottomHeight: null,
       tab: 'status',
+      // The two rails beside the note. Both start open, and a session stored
+      // before these existed still has to restore as "open".
+      sideOpen: true,
+      outlineOpen: true,
+      // The width the project rail was dragged to. `null` means "however wide
+      // the stylesheet says", so a session stored before this existed keeps
+      // the default instead of restoring a width nobody dragged.
+      sideWidth: null,
       // An unsaved buffer and whether it differs from the file on disk. Only
       // the in-memory copy carries these: a reload starts from disk again.
       draft: null,
@@ -2931,6 +3051,10 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 
     function storedHeight(value) {
       return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : null
+    }
+
+    function storedShown(value) {
+      return value === false ? false : true
     }
 
     /** The `openDirs` map a stored session describes, with the root expanded. */
@@ -2977,6 +3101,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             viewMode: session.viewMode,
             bottomHeight: session.bottomHeight,
             tab: session.tab,
+            sideOpen: session.sideOpen,
+            outlineOpen: session.outlineOpen,
+            sideWidth: session.sideWidth,
           }),
         )
       } catch {
@@ -2998,6 +3125,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       session.viewMode = storedViewMode(stored.viewMode)
       session.bottomHeight = storedHeight(stored.bottomHeight)
       session.tab = storedTab(stored.tab)
+      session.sideOpen = storedShown(stored.sideOpen)
+      session.outlineOpen = storedShown(stored.outlineOpen)
+      session.sideWidth = storedHeight(stored.sideWidth)
     }
 
     /** Forget everything, in memory and on disk. */
@@ -3039,14 +3169,27 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const [searchResult, setSearchResult] = React.useState(null)
       const [searching, setSearching] = React.useState(false)
       const [hitKey, setHitKey] = React.useState(null)
+      // Paths whose hit group the reader folded shut. Groups start open: the
+      // first thing a search should show is the lines that matched.
+      const [closedHits, setClosedHits] = React.useState(() => [])
       const [creating, setCreating] = React.useState(null)
       const [renaming, setRenaming] = React.useState(null)
       const [deleting, setDeleting] = React.useState(null)
       const [viewMode, setViewMode] = React.useState('edit')
       const [bottomHeight, setBottomHeight] = React.useState(null)
       const [resizing, setResizing] = React.useState(false)
+      // The project rail on the left and the outline on the right both take
+      // width the note could use, so each one folds away on its own.
+      const [sideOpen, setSideOpen] = React.useState(true)
+      const [outlineOpen, setOutlineOpen] = React.useState(true)
+      // The rail's width, in pixels, once the user has dragged it. Until then
+      // the stylesheet's width stands and no inline style is rendered.
+      const [sideWidth, setSideWidth] = React.useState(null)
+      const [sideResizing, setSideResizing] = React.useState(false)
       const bottomRef = React.useRef(null)
       const resizeRef = React.useRef(null)
+      const sideRef = React.useRef(null)
+      const sideResizeRef = React.useRef(null)
       // The node the export copies: the very tree the reader is looking at, so
       // formulas and diagrams leave with it already typeset.
       const previewRef = React.useRef(null)
@@ -3451,6 +3594,9 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
           setViewMode(session.viewMode)
           setTab(session.tab)
           if (session.bottomHeight !== null) setBottomHeight(session.bottomHeight)
+          setSideOpen(session.sideOpen)
+          setOutlineOpen(session.outlineOpen)
+          if (session.sideWidth !== null) setSideWidth(session.sideWidth)
 
           const list = await refreshProjects()
           if (cancelled) return
@@ -3518,6 +3664,11 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
        */
       const searchTimer = React.useRef(null)
       const searchSeq = React.useRef(0)
+      // A search crosses one RPC frame and comes back through a promise that
+      // the panel cannot cancel. If that frame is dropped the promise never
+      // settles, so the box would sit on "Searching…" forever with nothing to
+      // click. A local deadline turns that into a reported failure.
+      const SEARCH_TIMEOUT = 10 * 1000
       // A hit can only be scrolled to once the editor has rendered that file:
       // the request is remembered here and consumed by the effect below.
       const pendingHit = React.useRef(null)
@@ -3533,8 +3684,23 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             return
           }
           setSearching(true)
+          const request = api.searchNotes(target.id, trimmed)
+          // The deadline below may win the race; a rejection that arrives after
+          // that must not surface as an unhandled rejection.
+          request.catch(() => {})
+          let deadlineId = null
+          const deadline = new Promise((_resolve, reject) => {
+            deadlineId = window.setTimeout(() => {
+              deadlineId = null
+              reject(
+                Object.assign(new Error(t('panel.searchTimeout')), {
+                  code: 'notes/search-timeout',
+                }),
+              )
+            }, SEARCH_TIMEOUT)
+          })
           try {
-            const value = await api.searchNotes(target.id, trimmed)
+            const value = await Promise.race([request, deadline])
             if (seq !== searchSeq.current) return
             setSearchResult({
               query: typeof value?.query === 'string' ? value.query : trimmed,
@@ -3549,10 +3715,14 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             setSearchResult(null)
             report(caught)
           } finally {
+            if (deadlineId !== null) {
+              window.clearTimeout(deadlineId)
+              deadlineId = null
+            }
             if (seq === searchSeq.current) setSearching(false)
           }
         },
-        [api, report],
+        [api, report, t],
       )
 
       const onSearchInput = React.useCallback(
@@ -3586,6 +3756,7 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         setSearchResult(null)
         setSearching(false)
         setHitKey(null)
+        setClosedHits([])
       }, [])
 
       /** 1-based line number to a 0-based character offset inside the opened file. */
@@ -3892,6 +4063,35 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         }
       }, [])
 
+      /**
+       * The outline is mounted beside both modes, so a click has two possible
+       * destinations. The preview owns heading anchors; the editor owns only a
+       * buffer, where the same heading is a line number. Scroll that line into
+       * view and leave the caret on it, the way the preview scrolls to the
+       * anchor — otherwise the rail is a column of dead links while editing.
+       */
+      const jumpToSourceLine = (entry) => {
+        if (viewMode !== 'edit') {
+          jumpToHeading(entry.id)
+          return
+        }
+        const area = codeAreaRef.current
+        if (area === null) return
+        const text = typeof area.value === 'string' ? area.value : draft
+        const line = typeof entry.line === 'number' && entry.line > 0 ? entry.line : 1
+        const offset = lineOffset(text, line)
+        if (typeof area.focus === 'function') area.focus()
+        if (typeof area.setSelectionRange === 'function') area.setSelectionRange(offset, offset)
+        const lines = Math.max(1, String(text).split('\n').length)
+        const tall = typeof area.scrollHeight === 'number' ? area.scrollHeight : 0
+        const visible = typeof area.clientHeight === 'number' ? area.clientHeight : 0
+        if (tall > 0 && visible > 0) {
+          const rowHeight = tall / lines
+          area.scrollTop = Math.max(0, (line - 1) * rowHeight - Math.floor(visible / 3))
+          syncGutterScroll()
+        }
+      }
+
       const onSelectLine = React.useCallback(
         (event) => {
           if (project === null || file === null) return
@@ -3975,6 +4175,75 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                 }),
               )
             : null,
+        )
+
+      /**
+       * The caret that folds one of the rails away.
+       *
+       * The arrow points at the edge the rail would go to, so it reads the same
+       * way as a disclosure caret: "this goes away from here". Once the rail is
+       * gone the same button brings it back, pointing the other way.
+       */
+      const foldButton = (side, open, onClick, label) =>
+        h(
+          'button',
+          {
+            className: 'lmn-btn lmn-foldbtn',
+            type: 'button',
+            title: label,
+            'aria-label': label,
+            'aria-expanded': open ? 'true' : 'false',
+            onClick,
+          },
+          h(
+            'svg',
+            { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true' },
+            h('path', {
+              d: (side === 'left') === open ? 'M10 3.5 5.5 8 10 12.5' : 'M6 3.5 10.5 8 6 12.5',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.4,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }),
+          ),
+        )
+
+      /**
+       * A toolbar action with no caption.
+       *
+       * The labels these buttons used to carry were the widest thing in the
+       * strip, and every one of them is a word the icon already says: the
+       * caption moves into the tooltip and the accessible name stays. The
+       * primary variant keeps its filled background, so the one action that
+       * writes to disk is still the one the eye lands on.
+       */
+      const glyphButton = (path, label, onClick, options = {}) =>
+        h(
+          'button',
+          {
+            className: `lmn-btn lmn-glyphbtn${options.primary ? ' lmn-btn-primary' : ''}`,
+            type: 'button',
+            title: label,
+            'aria-label': label,
+            // Only a segmented control has a pressed state; the rest leave it
+            // off the element entirely rather than claiming "false".
+            'aria-pressed': options.pressed === undefined ? undefined : options.pressed ? 'true' : 'false',
+            disabled: options.disabled === true,
+            onClick,
+          },
+          h(
+            'svg',
+            { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true' },
+            h('path', {
+              d: path,
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: 1.4,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }),
+          ),
         )
 
       /** Per-extension colours, in the spirit of a VS Code icon theme. */
@@ -4428,6 +4697,8 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         if (at < 0) body.push(text)
         else if (end < text.length) body.push(text.slice(end))
         const key = `${hit.path}:${hit.line}`
+        // The path is named once, by the group header above this row: repeating
+        // it on every line is what made two files interleave on screen.
         return h(
           'button',
           {
@@ -4440,10 +4711,31 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             'span',
             { className: 'lmn-hit-path' },
             h('span', { className: 'lmn-hit-line' }, String(hit.line)),
-            hit.path,
           ),
           h('span', { className: 'lmn-hit-text' }, body),
         )
+      }
+
+      /**
+       * The hits, gathered under the file they came from. The Host returns them
+       * in walk order, so a file's lines are usually adjacent already; grouping
+       * by first appearance keeps that order while folding each file's lines
+       * under one header instead of repeating the path on every row.
+       */
+      const hitGroups = (hits) => {
+        const groups = []
+        const seen = new Map()
+        hits.forEach((hit) => {
+          const path = typeof hit?.path === 'string' ? hit.path : ''
+          let group = seen.get(path)
+          if (group === undefined) {
+            group = { path, count: 0 }
+            seen.set(path, group)
+            groups.push(group)
+          }
+          group.count += 1
+        })
+        return groups
       }
 
       const searchBox = h(
@@ -4491,17 +4783,67 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         const stats = `${hits.length} ${t('panel.searchHits')} · ${searchResult.matched} ${t('panel.searchFiles')} · ${searchResult.scanned} ${t('panel.searchScanned')}${
           searchResult.truncated ? ` · ${t('panel.searchTruncated')}` : ''
         }`
+        const groups = hitGroups(hits)
+        const foldGroup = (path) => {
+          setClosedHits((current) =>
+            current.includes(path) ? current.filter((item) => item !== path) : current.concat(path),
+          )
+        }
         return h(
           'div',
           { className: 'lmn-hits' },
           h('div', { key: 'stats', className: 'lmn-search-note' }, stats),
-          hits.map((hit, index) => hitRow(hit, index)),
+          groups.map((group) => {
+            const open = !closedHits.includes(group.path)
+            return h(
+              'div',
+              { key: `group:${group.path}`, className: 'lmn-hit-group' },
+              h(
+                'button',
+                {
+                  className: 'lmn-hit-file',
+                  title: group.path,
+                  'aria-expanded': open,
+                  onClick: () => foldGroup(group.path),
+                },
+                h(
+                  'svg',
+                  {
+                    className: 'lmn-hit-file-caret',
+                    viewBox: '0 0 16 16',
+                    width: 11,
+                    height: 11,
+                    'aria-hidden': 'true',
+                  },
+                  h('path', {
+                    d: open ? 'M3.5 6 8 10.5 12.5 6' : 'M6 3.5 10.5 8 6 12.5',
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    strokeWidth: 1.4,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                  }),
+                ),
+                h('span', { className: 'lmn-hit-file-path' }, group.path),
+                h('span', { className: 'lmn-hit-file-count' }, String(group.count)),
+              ),
+              open
+                ? hits.map((hit, index) => (hit?.path === group.path ? hitRow(hit, index) : null))
+                : null,
+            )
+          }),
         )
       })()
 
       const side = h(
         'aside',
-        { className: 'lmn-side' },
+        {
+          className: 'lmn-side',
+          ref: sideRef,
+          // Only once dragged: otherwise the stylesheet's 260px stands, and a
+          // session stored before this existed keeps that default.
+          style: sideWidth === null ? undefined : { width: `${sideWidth}px`, flex: `0 0 ${sideWidth}px` },
+        },
         h(
           'div',
           { className: 'lmn-side-head' },
@@ -4626,6 +4968,50 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
       const bottomStyle =
         bottomHeight === null ? undefined : { height: `${bottomHeight}px`, maxHeight: 'none' }
 
+      // The project rail is usable at its default width, but a deep tree needs
+      // more and a wide one wants the note's space back. Same drag as the
+      // bottom pane, turned ninety degrees: the pointer's X decides the width.
+      const SIDE_MIN = 180
+      const SIDE_RESERVED = 320
+      const endSideResize = (event) => {
+        if (sideResizeRef.current === null) return
+        sideResizeRef.current = null
+        setSideResizing(false)
+        event?.currentTarget?.releasePointerCapture?.(event.pointerId)
+        // Written once, on release: the width is part of what coming back
+        // should restore, but not at the cost of a write per pixel.
+        session.sideWidth = sideWidth
+        writeStoredSession()
+      }
+      const sideSplitterProps = {
+        role: 'separator',
+        'aria-orientation': 'vertical',
+        'aria-label': t('panel.resizeSide'),
+        'data-dragging': sideResizing ? 'true' : 'false',
+        onPointerDown: (event) => {
+          const rail = sideRef.current
+          const total = rail?.parentElement?.getBoundingClientRect?.().width ?? 0
+          if (rail === null || !(total > 0)) return
+          event.preventDefault?.()
+          event.currentTarget?.setPointerCapture?.(event.pointerId)
+          sideResizeRef.current = {
+            startX: event.clientX,
+            startWidth: rail.getBoundingClientRect?.().width ?? 0,
+            // Whatever the note's minimum is, the rail may not eat the pane.
+            max: Math.max(SIDE_MIN + 40, total - SIDE_RESERVED),
+          }
+          setSideResizing(true)
+        },
+        onPointerMove: (event) => {
+          const drag = sideResizeRef.current
+          if (drag === null) return
+          const next = drag.startWidth + (event.clientX - drag.startX)
+          setSideWidth(Math.round(Math.min(drag.max, Math.max(SIDE_MIN, next))))
+        },
+        onPointerUp: endSideResize,
+        onPointerCancel: endSideResize,
+      }
+
       /**
        * Export the preview as one self-contained file.
        *
@@ -4674,6 +5060,24 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
         }
       }
 
+      // The outline is only worth a rail when there are at least two headings to
+      // jump between, so both the rail and its toggle read the same list. It is
+      // read from the buffer in either mode: the rail used to exist only beside
+      // the preview, which made the toolbar shift by one button whenever the
+      // mode changed.
+      const outlineEntries = outlineOf(String(draft).split(/\r?\n/))
+
+      // One rail definition, mounted beside both the source and the rendered
+      // page, so switching modes never changes the width of either column.
+      const outlineRail =
+        outlineEntries.length < 2
+          ? null
+          : h(
+              'aside',
+              { className: 'lmn-outline', 'aria-label': t('panel.outline') },
+              outlineEntries.map((entry) => outlineEntry(entry, 'side', jumpToSourceLine)),
+            )
+
       const editor =
         file === null
           ? h(
@@ -4721,86 +5125,85 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
                     ? h('div', { className: 'lmn-render-empty' }, t('panel.previewEmpty'))
                     : h('div', { className: 'lmn-preview' },
                         h('div', { className: 'lmn-render', ref: previewRef }, renderMarkdown(draft)),
-                        (() => {
-                          const entries = outlineOf(String(draft).split(/\r?\n/))
-                          if (entries.length < 2) return null
-                          return h('aside', {
-                            className: 'lmn-outline',
-                            'aria-label': t('panel.outline'),
-                          }, entries.map((entry) => outlineEntry(entry, 'side')))
-                        })())
+                        outlineRail,
+                      )
                   : h(
                       'div',
-                      { className: 'lmn-code' },
+                      { className: 'lmn-preview' },
                       h(
                         'div',
-                        { className: 'lmn-gutter', 'aria-hidden': 'true', ref: gutterRef },
-                        Array.from({ length: lineCount }, (_, index) => {
-                          const number = index + 1
-                          const mark = marks.added.has(number)
-                            ? ' is-added'
-                            : marks.modified.has(number)
-                              ? ' is-modified'
-                              : marks.deleted.has(number)
-                                ? ' is-deleted'
-                                : ''
-                          return h(
-                            'div',
-                            { key: index, className: 'lmn-gutter-line' },
-                            h('span', { className: `lmn-gutter-mark${mark}` }),
-                            h('span', { className: 'lmn-gutter-num' }, String(number)),
-                          )
-                        }),
-                      ),
-                      h(
-                        'div',
-                        { className: 'lmn-code-body' },
+                        { className: 'lmn-code' },
                         h(
                           'div',
-                          { className: 'lmn-hl', 'aria-hidden': 'true', ref: hlRef },
-                          highlightMarkdown(draft),
+                          { className: 'lmn-gutter', 'aria-hidden': 'true', ref: gutterRef },
+                          Array.from({ length: lineCount }, (_, index) => {
+                            const number = index + 1
+                            const mark = marks.added.has(number)
+                              ? ' is-added'
+                              : marks.modified.has(number)
+                                ? ' is-modified'
+                                : marks.deleted.has(number)
+                                  ? ' is-deleted'
+                                  : ''
+                            return h(
+                              'div',
+                              { key: index, className: 'lmn-gutter-line' },
+                              h('span', { className: `lmn-gutter-mark${mark}` }),
+                              h('span', { className: 'lmn-gutter-num' }, String(number)),
+                            )
+                          }),
                         ),
-                        h('textarea', {
-                          value: draft,
-                          ref: codeAreaRef,
-                          spellCheck: false,
-                          onChange: (event) => {
-                            const next = event.target.value
-                            // Bumps the model version, exactly like VS Code's
-                            // `versionId`, so an in-flight save can tell that
-                            // these keystrokes arrived after it started.
-                            draftVersion.current += 1
-                            setDraft(next)
-                            setNotice(null)
-                            // Keep the unsaved buffer in the session so a panel
-                            // switch cannot throw away typing.
-                            if (file !== null) {
-                              session.projectId = project?.id ?? session.projectId
-                              session.filePath = file.path
-                              session.draft = next
-                              session.dirty = next !== (file.content ?? next)
-                              writeStoredSession()
-                              // Every keystroke restarts the one timer, so the
-                              // write lands when typing pauses.
-                              scheduleAutoSave()
-                            }
-                          },
-                          onScroll: syncGutterScroll,
-                          // Leaving the editor writes straight away: the timer
-                          // would otherwise hold an unsaved note for its delay
-                          // while the user is already reading something else.
-                          onBlur: () => {
-                            if (saveTimer.current !== null) {
-                              window.clearTimeout(saveTimer.current)
-                              saveTimer.current = null
-                            }
-                            void save({ quiet: true })
-                          },
-                          onKeyUp: (event) => void onSelectLine(event),
-                          onClick: (event) => void onSelectLine(event),
-                          'aria-label': file.path,
-                        }),
+                        h(
+                          'div',
+                          { className: 'lmn-code-body' },
+                          h(
+                            'div',
+                            { className: 'lmn-hl', 'aria-hidden': 'true', ref: hlRef },
+                            highlightMarkdown(draft, searchResult?.query ?? ''),
+                          ),
+                          h('textarea', {
+                            value: draft,
+                            ref: codeAreaRef,
+                            spellCheck: false,
+                            onChange: (event) => {
+                              const next = event.target.value
+                              // Bumps the model version, exactly like VS Code's
+                              // `versionId`, so an in-flight save can tell that
+                              // these keystrokes arrived after it started.
+                              draftVersion.current += 1
+                              setDraft(next)
+                              setNotice(null)
+                              // Keep the unsaved buffer in the session so a panel
+                              // switch cannot throw away typing.
+                              if (file !== null) {
+                                session.projectId = project?.id ?? session.projectId
+                                session.filePath = file.path
+                                session.draft = next
+                                session.dirty = next !== (file.content ?? next)
+                                writeStoredSession()
+                                // Every keystroke restarts the one timer, so the
+                                // write lands when typing pauses.
+                                scheduleAutoSave()
+                              }
+                            },
+                            onScroll: syncGutterScroll,
+                            // Leaving the editor writes straight away: the timer
+                            // would otherwise hold an unsaved note for its delay
+                            // while the user is already reading something else.
+                            onBlur: () => {
+                              if (saveTimer.current !== null) {
+                                window.clearTimeout(saveTimer.current)
+                                saveTimer.current = null
+                              }
+                              void save({ quiet: true })
+                            },
+                            onKeyUp: (event) => void onSelectLine(event),
+                            onClick: (event) => void onSelectLine(event),
+                            'aria-label': file.path,
+                          }),
+                        ),
                       ),
+                      outlineRail,
                     ),
               ),
             )
@@ -4870,49 +5273,67 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
 
       return h(
         'div',
-        { className: 'lmn-root' },
+        {
+          className: `lmn-root${sideOpen ? '' : ' is-side-closed'}${outlineOpen ? '' : ' is-outline-closed'}`,
+        },
         side,
+        // Only a rail that is showing can be widened; a folded one has no edge.
+        sideOpen ? h('div', { className: 'lmn-splitter lmn-splitter-v', ...sideSplitterProps }) : null,
         h(
           'div',
           { className: 'lmn-main' },
           h(
             'div',
             { className: 'lmn-toolbar' },
+            // The rail's own header folds with the rail, so the one control that
+            // can always bring it back lives here, at the edge it came from.
+            foldButton(
+              'left',
+              sideOpen,
+              () => {
+                session.sideOpen = !sideOpen
+                writeStoredSession()
+                setSideOpen(!sideOpen)
+              },
+              sideOpen ? t('panel.hideSide') : t('panel.showSide'),
+            ),
             h('span', { className: 'lmn-path' }, file === null ? (project?.rootPath ?? '') : file.path),
             // A picture has nothing to edit, save or export, so the whole
             // Markdown toolbar stays out of its way.
             file !== null && file.asset !== undefined
               ? h('span', { className: 'lmn-note' }, t('panel.assetHint'))
               : h(
-              'div',
-              { className: 'lmn-seg', role: 'group', 'aria-label': `${t('panel.edit')} / ${t('panel.preview')}` },
-              h(
-                'button',
-                {
-                  className: 'lmn-btn',
-                  'aria-pressed': viewMode === 'edit' ? 'true' : 'false',
-                  onClick: () => {
-                    session.viewMode = 'edit'
-                    writeStoredSession()
-                    setViewMode('edit')
+                  'div',
+                  {
+                    className: 'lmn-seg',
+                    role: 'group',
+                    'aria-label': `${t('panel.edit')} / ${t('panel.preview')}`,
                   },
-                },
-                t('panel.edit'),
-              ),
-              h(
-                'button',
-                {
-                  className: 'lmn-btn',
-                  'aria-pressed': viewMode === 'preview' ? 'true' : 'false',
-                  onClick: () => {
-                    session.viewMode = 'preview'
-                    writeStoredSession()
-                    setViewMode('preview')
-                  },
-                },
-                t('panel.preview'),
-              ),
-            ),
+                  // The two modes are a pencil and an eye rather than the words
+                  // "edit" and "preview": the words were the widest thing in the
+                  // strip, and both modes keep the same rail so the toolbar
+                  // never changes width when they switch.
+                  glyphButton(
+                    'M2.5 13.5l.6-2.6 7.6-7.6 2 2-7.6 7.6-2.6.6Z',
+                    t('panel.edit'),
+                    () => {
+                      session.viewMode = 'edit'
+                      writeStoredSession()
+                      setViewMode('edit')
+                    },
+                    { pressed: viewMode === 'edit' },
+                  ),
+                  glyphButton(
+                    'M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8ZM8 6.2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6Z',
+                    t('panel.preview'),
+                    () => {
+                      session.viewMode = 'preview'
+                      writeStoredSession()
+                      setViewMode('preview')
+                    },
+                    { pressed: viewMode === 'preview' },
+                  ),
+                ),
             notice === 'panel.staleTitle' ? h('span', { className: 'lmn-note' }, t('panel.staleTitle')) : null,
             notice === 'panel.saved' ? h('span', { className: 'lmn-note' }, t('panel.saved')) : null,
             notice === 'panel.exported' ? h('span', { className: 'lmn-note' }, t('panel.exported')) : null,
@@ -4943,37 +5364,53 @@ body:not([data-ds-light-theme]) .lmn-gutter-mark.is-deleted{background:#ca4b51}
             // them means anything while a picture is open.
             file !== null && file.asset !== undefined
               ? null
-              : h(
-                  'button',
-                  {
-                    className: 'lmn-btn',
-                    disabled: file === null || busy === 'read',
-                    onClick: () => file !== null && project !== null && void openFile(project, file.path),
-                  },
+              : glyphButton(
+                  'M13.5 8a5.5 5.5 0 1 1-1.9-4.2M13.5 2.2v3.4h-3.4',
                   t('panel.reload'),
+                  () => file !== null && project !== null && void openFile(project, file.path),
+                  { disabled: file === null || busy === 'read' },
                 ),
             file !== null && file.asset !== undefined
               ? null
-              : h(
-                  'button',
-                  {
-                    className: 'lmn-btn',
-                    disabled: file === null || busy === 'read',
-                    title: t('panel.exportHtml'),
-                    onClick: () => void exportHtml(),
-                  },
+              : glyphButton(
+                  'M8 1.8v7.4M5.2 6.5 8 9.3l2.8-2.8M2.5 11.2v1.6a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-1.6',
                   t('panel.exportHtml'),
+                  () => void exportHtml(),
+                  { disabled: file === null || busy === 'read' },
                 ),
+            // Save keeps a caption while it is busy: "Saving…" is the one state
+            // where the icon alone would leave the strip silent about a write.
             file !== null && file.asset !== undefined
               ? null
-              : h(
-                  'button',
-                  {
-                    className: 'lmn-btn lmn-btn-primary',
-                    disabled: file === null || busy === 'save',
-                    onClick: () => void save(),
+              : busy === 'save'
+                ? h(
+                    'button',
+                    { className: 'lmn-btn lmn-btn-primary', disabled: true },
+                    t('panel.saving'),
+                  )
+                : glyphButton(
+                    // A floppy, not an arrow: export already owns the
+                    // arrow-into-a-tray, and two down arrows side by side read
+                    // as the same button twice.
+                    'M2.5 2.5h8l3 3v8h-11zM5.5 2.5v3.5h4v-3.5M4.5 13.5v-4h7v4',
+                    t('panel.save'),
+                    () => void save(),
+                    { disabled: file === null, primary: true },
+                  ),
+            // The rail follows the headings, not the mode: it is mounted in
+            // both, so its toggle exists in both too and the toolbar keeps the
+            // same width when the mode changes.
+            outlineEntries.length < 2
+              ? null
+              : foldButton(
+                  'right',
+                  outlineOpen,
+                  () => {
+                    session.outlineOpen = !outlineOpen
+                    writeStoredSession()
+                    setOutlineOpen(!outlineOpen)
                   },
-                  busy === 'save' ? t('panel.saving') : t('panel.save'),
+                  outlineOpen ? t('panel.hideOutline') : t('panel.showOutline'),
                 ),
           ),
           error === null

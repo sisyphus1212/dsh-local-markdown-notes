@@ -825,7 +825,8 @@ function treeNamespace(options = {}) {
       if ((options.unreadable ?? []).includes(relativePath)) {
         throw Object.assign(new Error(`no such file ${relativePath}`), { code: 'notes/enoent' })
       }
-      return { ok: true, value: { path: relativePath, version: 'v1', content: 'one\ntwo\nthree\n' } }
+      const content = (options.contents ?? {})[relativePath] ?? 'one\ntwo\nthree\n'
+      return { ok: true, value: { path: relativePath, version: 'v1', content } }
     },
     async readAsset(projectId, relativePath) {
       calls.push(['readAsset', projectId, relativePath])
@@ -900,6 +901,9 @@ function treeNamespace(options = {}) {
       if (options.searchFails) {
         throw Object.assign(new Error('scan failed'), { code: 'notes/search-failed' })
       }
+      // A dropped RPC frame never settles: the panel gets a promise that stays
+      // pending for the rest of the test, exactly like the real one.
+      if (options.searchHangs === true) return new Promise(() => {})
       const hits = (options.searchHits ?? []).map((hit) => ({ ...hit }))
       return {
         ok: true,
@@ -1898,9 +1902,14 @@ test('the preview toggle renders markdown as elements and replaces the textarea'
   const buttons = findAll(seg, 'lmn-btn')
   assert.equal(buttons.length, 2, 'editing and preview are the only two modes')
   assert.deepEqual(
-    buttons.map((button) => textsOf(button)),
+    buttons.map((button) => button.props.title),
     [`${NS}:panel.edit`, `${NS}:panel.preview`],
-    'both modes are labelled from the dictionary',
+    'both modes are named from the dictionary',
+  )
+  assert.deepEqual(
+    buttons.map((button) => textsOf(button)),
+    ['', ''],
+    'the icons carry no caption — the name lives in the tooltip',
   )
   assert.equal(buttons[0].props['aria-pressed'], 'true', 'editing is the default mode')
 
@@ -2711,7 +2720,11 @@ test('dragging the splitter resizes the bottom pane and keeps the chosen height'
   })
   const panel = await mountPanel({ namespace })
 
-  const splitter = () => findOne(panel.runtime.tree(), 'lmn-splitter')
+  // Two handles now share the class: one beside the rail, one above the pane.
+  const splitter = () =>
+    findAll(panel.runtime.tree(), 'lmn-splitter').find(
+      (node) => node.props['aria-orientation'] === 'horizontal',
+    )
   const pane = () => findOne(panel.runtime.tree(), 'lmn-bottom')
 
   assert.ok(splitter(), 'a splitter sits between the editor and the bottom pane')
@@ -3069,11 +3082,70 @@ test('typing a query asks the Host and renders one row per hit', async () => {
   const tree = panel.runtime.tree()
   const rows = findAll(tree, 'lmn-hit')
   assert.equal(rows.length, 2, 'one row per hit')
-  assert.ok(textsOf(rows[0]).includes('docs/a.md'), 'the first row names its file')
+  // The path is named once per file, by the group header: repeating it on every
+  // row is what made two files interleave on screen.
+  const headers = findAll(tree, 'lmn-hit-file')
+  assert.deepEqual(
+    headers.map(textsOf).map((text) => text.replace(/[0-9]/g, '')),
+    ['docs/a.md', 'notes.md'],
+    'each file that matched names itself once',
+  )
+  assert.equal(
+    findAll(rows[0], 'lmn-hit-path').length,
+    1,
+    'the row keeps its line number',
+  )
   assert.ok(textsOf(rows[0]).includes('the ovs bridge'), 'the row shows the matched line')
   assert.ok(findOne(tree, 'lmn-hit-mark'), 'the matched run is marked')
   assert.ok(findOne(tree, 'lmn-tree').children.some((child) => child?.props?.className === 'lmn-hits'), 'hits replace the tree')
   assert.ok(textsOf(tree).includes('7'), 'how many files were scanned is reported')
+})
+
+test('the hits of one file fold under its header', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [] },
+    searchHits: [
+      { path: 'docs/a.md', line: 3, column: 0, text: 'ovs bridge' },
+      { path: 'docs/b.md', line: 8, column: 0, text: 'ovs port' },
+      { path: 'docs/a.md', line: 9, column: 0, text: 'ovs again' },
+    ],
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  let tree = panel.runtime.tree()
+  assert.equal(findAll(tree, 'lmn-hit-file').length, 2, 'two files, two headers')
+  assert.equal(findAll(tree, 'lmn-hit').length, 3, 'every hit is still listed')
+
+  // The header counts its own lines: docs/a.md matched twice, docs/b.md once.
+  const headers = findAll(tree, 'lmn-hit-file')
+  assert.equal(
+    textsOf(findOne(headers[0], 'lmn-hit-file-count')),
+    '2',
+    'the first header counts its two lines',
+  )
+  assert.equal(
+    textsOf(findOne(headers[1], 'lmn-hit-file-count')),
+    '1',
+    'the second header counts its one line',
+  )
+
+  await click(panel.runtime, headers[0])
+  tree = panel.runtime.tree()
+  assert.equal(findAll(tree, 'lmn-hit').length, 1, 'folding a file hides only its own lines')
+  assert.equal(
+    textsOf(findAll(tree, 'lmn-hit')[0]).includes('ovs port'),
+    true,
+    'the other file keeps its line',
+  )
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-hit-file')[0])
+  assert.equal(findAll(panel.runtime.tree(), 'lmn-hit').length, 3, 'unfolding brings the lines back')
 })
 
 test('clicking a hit opens that file through the normal read path', async () => {
@@ -3098,6 +3170,117 @@ test('clicking a hit opens that file through the normal read path', async () => 
   const tree = panel.runtime.tree()
   assert.ok(findOne(tree, 'lmn-editor'), 'the editor shows the opened file')
   assert.ok(textsOf(tree).includes('docs/a.md'), 'the editor names the opened file')
+})
+
+test('a search hit is marked inside the source line it came from', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [] },
+    searchHits: [{ path: 'docs/a.md', line: 2, column: 0, text: 'two' }],
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'two' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  await click(panel.runtime, findOne(panel.runtime.tree(), 'lmn-hit'))
+
+  const tree = panel.runtime.tree()
+  const hl = findOne(tree, 'lmn-hl')
+  assert.ok(hl, 'the editor paints a highlight layer over the textarea')
+  const mark = findOne(hl, 'lmn-hit-mark')
+  assert.ok(mark, 'the matched word is marked in the source')
+  assert.equal(textsOf(mark), 'two', 'the marked run is exactly the query')
+  // Marking must not move a glyph: the layer still reads back as the file.
+  assert.deepEqual(
+    findAll(hl, 'lmn-hl-line').map(textsOf),
+    ['one', 'two', 'three', ''],
+    'every source line keeps its exact text while marking',
+  )
+
+  await click(panel.runtime, findOne(tree, 'lmn-search-clear'))
+  assert.equal(
+    findAll(panel.runtime.tree(), 'lmn-hit-mark').length,
+    0,
+    'clearing the search drops every mark',
+  )
+})
+
+test('a mark inside a fence or a bullet keeps the line byte for byte', async () => {
+  const source = ['# Title', '```bash', 'echo two', '```', '- bullet two', ''].join('\n')
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [] },
+    contents: { 'docs/a.md': source },
+    searchHits: [{ path: 'docs/a.md', line: 3, column: 0, text: 'two' }],
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'two' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  await click(panel.runtime, findOne(panel.runtime.tree(), 'lmn-hit'))
+
+  const hl = findOne(panel.runtime.tree(), 'lmn-hl')
+  const lines = findAll(hl, 'lmn-hl-line')
+  // Painted code arrives as spans and arrays of spans; the mark must be cut
+  // out of the text inside them, not out of the painted elements themselves.
+  assert.deepEqual(lines.map(textsOf), source.split('\n'), 'painted code and bullets keep every glyph')
+  const marks = findAll(hl, 'lmn-hit-mark')
+  assert.equal(marks.length, 2, 'both the fenced line and the bullet are marked')
+  assert.deepEqual(marks.map(textsOf), ['two', 'two'], 'each mark is the query itself')
+})
+
+test('a search that never answers fails loudly instead of searching forever', async () => {
+  const { namespace, calls } = treeNamespace({ entriesByPath: { '': [] }, searchHangs: true })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  assert.ok(
+    calls.some((call) => call[0] === 'searchNotes' && call[2] === 'ovs'),
+    'the box really asked the Host before giving up',
+  )
+  const tree = panel.runtime.tree()
+  const error = findOne(tree, 'lmn-error')
+  assert.ok(error, 'the dropped answer surfaces as an error')
+  assert.ok(
+    textsOf(error).includes(`${NS}:panel.searchTimeout`),
+    `the message says the search timed out: ${textsOf(error)}`,
+  )
+  assert.equal(
+    textsOf(tree).includes(`${NS}:panel.searching`),
+    false,
+    'the box stops saying "Searching…"',
+  )
+  assert.equal(findAll(tree, 'lmn-hit').length, 0, 'no stale hits are shown')
+})
+
+test('a slow search that answers inside the deadline is left alone', async () => {
+  const { namespace } = treeNamespace({
+    entriesByPath: { '': [] },
+    searchHits: [{ path: 'docs/a.md', line: 1, column: 0, text: 'ovs bridge' }],
+  })
+  const panel = await mountPanel({ namespace })
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+
+  findOne(panel.runtime.tree(), 'lmn-search-input').props.onChange({ target: { value: 'ovs' } })
+  await panel.runtime.flush()
+  await panel.timerQueue.run()
+  await panel.runtime.flush()
+
+  const tree = panel.runtime.tree()
+  assert.equal(findOne(tree, 'lmn-error'), undefined, 'a timely answer is not an error')
+  assert.equal(findAll(tree, 'lmn-hit').length, 1, 'the hit is rendered')
+  assert.equal(panel.timerQueue.pending(), 0, 'the deadline does not linger after the answer')
 })
 
 test('clearing the box puts the explorer back without asking again', async () => {
@@ -3815,14 +3998,14 @@ test('the toolbar offers an HTML export next to save', async () => {
   const panel = await mountPanel({ namespace })
 
   const buttons = findAll(panel.runtime.tree(), 'lmn-btn')
-  const labels = buttons.map((button) => textsOf(button))
+  const titles = buttons.map((button) => button.props.title)
   const label = panel.t('panel.exportHtml')
-  const index = labels.indexOf(label)
-  assert.ok(index >= 0, 'the export button sits in the toolbar: ' + labels.join(' | '))
+  const index = titles.indexOf(label)
+  assert.ok(index >= 0, 'the export button sits in the toolbar: ' + titles.join(' | '))
 
   const button = buttons[index]
   assert.equal(button.props.disabled, true, 'it stays disabled until a note is open')
-  assert.equal(button.props.title, label, 'the button names itself on hover')
+  assert.equal(button.props['aria-label'], label, 'the icon still names itself')
 })
 
 test('an export is one complete document with its styling inlined', () => {
@@ -4011,4 +4194,144 @@ test('the preview leaves pictures it cannot or need not read alone', async () =>
     sources,
     'every address the Markdown wrote is left as it was',
   )
+})
+
+// ---------------------------------------------------------------------------
+// The two rails: each takes width from the note, so each folds away on its own
+// ---------------------------------------------------------------------------
+
+test('the file list folds away and comes back from the toolbar', async () => {
+  const storage = fakeStorage()
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace, localStorage: storage })
+
+  const root = () => findOne(panel.runtime.tree(), 'lmn-root')
+  const toggles = () => findAll(findOne(panel.runtime.tree(), 'lmn-toolbar'), 'lmn-foldbtn')
+
+  assert.ok(!String(root().props.className).includes('is-side-closed'), 'the rail starts open')
+  assert.equal(toggles().length, 1, 'one toggle for the rail that is showing')
+  assert.equal(toggles()[0].props['aria-label'], `${NS}:panel.hideSide`, 'it offers to put the rail away')
+
+  await click(panel.runtime, toggles()[0])
+
+  assert.ok(
+    String(root().props.className).includes('is-side-closed'),
+    'the root carries the state the stylesheet folds on',
+  )
+  assert.equal(toggles()[0].props['aria-label'], `${NS}:panel.showSide`, 'the same button now offers it back')
+  assert.equal(storage.stored('local-markdown-notes:session').sideOpen, false, 'the choice is remembered')
+
+  await click(panel.runtime, toggles()[0])
+
+  assert.ok(!String(root().props.className).includes('is-side-closed'), 'the rail returns')
+  assert.equal(storage.stored('local-markdown-notes:session').sideOpen, true, 'and so is putting it back')
+})
+
+test('the outline folds away beside a note that has headings to jump between', async () => {
+  const storage = fakeStorage()
+  const { namespace } = treeNamespace({ entriesByPath: ONE_FILE })
+  const panel = await mountPanel({ namespace, localStorage: storage })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: '# 一级\n\n正文。\n\n## 二级\n\n更多正文。' } })
+  await panel.runtime.flush()
+
+  const toggles = () => findAll(findOne(panel.runtime.tree(), 'lmn-toolbar'), 'lmn-foldbtn')
+  const outlineToggle = () => toggles()[toggles().length - 1]
+
+  // The rail reads the buffer, not the rendered page, so it is there while the
+  // source is being written — the same column, in either mode.
+  assert.ok(findOne(panel.runtime.tree(), 'lmn-outline'), 'the rail is there while editing too')
+  assert.equal(toggles().length, 2, 'two rails, so two toggles, in either mode')
+  assert.equal(outlineToggle().props['aria-label'], `${NS}:panel.hideOutline`, 'and the rail can be folded')
+
+  await click(panel.runtime, outlineToggle())
+
+  const folded = findOne(panel.runtime.tree(), 'lmn-root')
+  assert.ok(String(folded.props.className).includes('is-outline-closed'), 'the root folds the rail away')
+  assert.ok(seekType(panel.runtime.tree(), 'textarea'), 'the source still fills the panel')
+  assert.equal(storage.stored('local-markdown-notes:session').outlineOpen, false, 'the choice is remembered')
+
+  await click(panel.runtime, findAll(findOne(panel.runtime.tree(), 'lmn-seg'), 'lmn-btn')[1])
+
+  assert.ok(findOne(panel.runtime.tree(), 'lmn-render'), 'the note itself still fills the panel')
+  assert.ok(
+    String(findOne(panel.runtime.tree(), 'lmn-root').props.className).includes('is-outline-closed'),
+    'preview opens with the rail still folded: the choice is about the note, not the mode',
+  )
+})
+
+test('an outline entry scrolls the source to that heading while editing', async () => {
+  const { namespace } = treeNamespace({ entriesByPath: { '': [{ path: '常用命令.md', name: '常用命令.md', type: 'file' }] } })
+  const panel = await mountPanel({ namespace })
+
+  await click(panel.runtime, findAll(panel.runtime.tree(), 'lmn-row')[0])
+  await click(
+    panel.runtime,
+    findAll(panel.runtime.tree(), 'lmn-row').find((item) => textsOf(item).includes('常用命令.md')),
+  )
+
+  const markdown = ['# 一级', '', '正文。', '', '## 二级', '', '更多正文。'].join('\n')
+  const area = seekType(findOne(panel.runtime.tree(), 'lmn-editor'), 'textarea')
+  area.props.onChange({ target: { value: markdown } })
+  await panel.runtime.flush()
+
+  // The harness attaches no real nodes, so stand in for the textarea the click
+  // reaches for. Twenty rows tall, so the scroll arithmetic has somewhere to go.
+  const calls = []
+  const areaNode = {
+    value: markdown,
+    scrollTop: 0,
+    scrollHeight: 20 * 20,
+    clientHeight: 20 * 6,
+    focus: () => calls.push('focus'),
+    setSelectionRange: (start, end) => calls.push(`caret ${start}-${end}`),
+  }
+  area.props.ref.current = areaNode
+  const gutter = findOne(panel.runtime.tree(), 'lmn-gutter')
+  gutter.props.ref.current = { scrollTop: 0 }
+
+  const outline = findOne(panel.runtime.tree(), 'lmn-outline')
+  assert.ok(outline, 'the rail sits beside the source')
+  const items = findAll(outline, 'lmn-outline-item')
+  assert.equal(items.length, 2, 'both headings are listed while editing')
+
+  await click(panel.runtime, items[1])
+
+  // '## 二级' starts the fifth line: "# 一级\n" is 5 characters, then "\n", "正文。\n",
+  // "\n" — 11 characters in, not offset 0.
+  assert.deepEqual(calls, ['focus', 'caret 11-11'], 'the caret moves to the heading, not to offset 0')
+  assert.ok(areaNode.scrollTop > 0, 'the heading is scrolled into view')
+  assert.equal(
+    gutter.props.ref.current.scrollTop,
+    areaNode.scrollTop,
+    'the gutter follows the text to the same line',
+  )
+  assert.ok(
+    findOne(panel.runtime.tree(), 'lmn-code'),
+    'the editor stays open: picking a heading is navigation, not a mode switch',
+  )
+})
+
+test('a session stored before the rails existed restores them open', async () => {
+  const storage = fakeStorage({
+    'local-markdown-notes:session': JSON.stringify({
+      projectId: null,
+      openDirs: [],
+      filePath: null,
+      viewMode: 'edit',
+      bottomHeight: null,
+      tab: 'status',
+    }),
+  })
+  const panel = await mountPanel({ namespace: treeNamespace(), localStorage: storage })
+
+  const root = findOne(panel.runtime.tree(), 'lmn-root')
+  assert.ok(!String(root.props.className).includes('is-side-closed'), 'the file list is back')
+  assert.ok(!String(root.props.className).includes('is-outline-closed'), 'the outline is back')
 })

@@ -1,0 +1,7 @@
+# Scratch probes and throwaway captures live here, never in a commit.
+.tmp-*
+.tmp/
+
+node_modules/
+coverage/
+*.log

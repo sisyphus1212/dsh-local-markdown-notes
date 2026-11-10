@@ -235,7 +235,56 @@ test('the signal reaches every filesystem call', async () => {
 })
 
 test('the scan cap is exported and bounded', () => {
-  assert.equal(MAX_SCANNED_FILES, 400)
+  assert.equal(MAX_SCANNED_FILES, 2000)
   assert.equal(MAX_HITS, 200)
   assert.equal(WINDOW_CHARS, 240)
 })
+
+test('sibling directories are listed at the same time, never more than four', async () => {
+  const files = {}
+  for (const folder of ['a', 'b', 'c', 'd', 'e', 'f', 'g']) files[`${ROOT}/${folder}/note.md`] = `needle in ${folder}\n`
+  const fs = fakeFs(files)
+
+  const original = fs.listDir
+  const real = fs.listDir.bind(fs)
+  let inFlight = 0
+  let peak = 0
+  fs.listDir = async (target, signal) => {
+    inFlight += 1
+    peak = Math.max(peak, inFlight)
+    // A macrotask is what gives the lanes a chance to actually overlap; a
+    // microtask-only yield would let every listing finish before the next starts.
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    try {
+      return await real(target, signal)
+    } finally {
+      inFlight -= 1
+    }
+  }
+
+  const result = await searchProject(fs, ROOT, 'needle')
+
+  assert.equal(result.matched, 7)
+  assert.ok(peak > 1, `the walk overlapped sibling listings (peak ${peak})`)
+  assert.ok(peak <= 4, `the walk never opened more than four lanes (peak ${peak})`)
+  assert.ok(original !== fs.listDir)
+})
+
+test('the walk keeps breadth-first order and one file per path', async () => {
+  const fs = fakeFs({
+    [`${ROOT}/a.md`]: 'needle\n',
+    [`${ROOT}/a/deep.md`]: 'needle\n',
+    [`${ROOT}/a/b/deeper.md`]: 'needle\n',
+    [`${ROOT}/b.md`]: 'needle\n',
+    [`${ROOT}/b/deep.md`]: 'needle\n',
+  })
+  const result = await searchProject(fs, ROOT, 'needle')
+
+  assert.deepEqual(
+    result.hits.map((hit) => hit.path),
+    ['a.md', 'b.md', 'a/deep.md', 'b/deep.md', 'a/b/deeper.md'],
+    'files of one depth come before the next depth, each depth sorted by name',
+  )
+  assert.equal(result.matched, 5)
+})
+
